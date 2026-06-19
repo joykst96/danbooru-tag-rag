@@ -1,0 +1,27 @@
+# 민감정보 / 환경설정
+.env
+
+# 데이터 (별도 취득/생성)
+danbooru-tags.csv
+models/
+data/
+logs/
+
+# 스캔 산출물
+*.txt
+category_*.txt
+artist_samples.txt
+alias_preview.txt
+
+# 파이썬
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
