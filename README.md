@@ -1,4 +1,4 @@
-# danbooru-tags-RAG
+# danbooru-tags-rag
 
 한국어 입력을 받아 2-pass cross-lingual 검색으로 Danbooru 태그와 자연어 프롬프트를 생성하는 로컬 도구.
 로컬 임베딩(multilingual-e5-large) + 로컬 LLM 기반.
