@@ -1,7 +1,7 @@
 [project]
-name = "danbooru-rag"
+name = "danbooru-tags-rag"
 version = "0.1.0"
-description = "Danbooru 태그 RAG 검색 도구 (2-pass cross-lingual, 로컬 LLM)"
+description = "Korean-to-Danbooru tag search with hallucination-free 2-pass cross-lingual RAG (local embeddings + local LLM)"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-danbooru-rag = "danbooru_rag.api:main"
-danbooru-rag-build = "danbooru_rag.builder:build_all"
+danbooru-rag = "core.api:main"
+danbooru-rag-build = "core.builder:build_all"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -24,4 +24,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["danbooru_rag*"]
+include = ["core*"]

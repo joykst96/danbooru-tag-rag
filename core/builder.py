@@ -14,8 +14,8 @@ danbooru-tags.csv 를 읽어 3개 variant(a/b/c) 인덱스를 빌드한다.
 CSV 파싱은 공유하고 임베딩만 variant별로 3번 → GPU면 전체 15분 내외.
 
 사용법:
-    python -m danbooru_rag.builder            # 전체 variant 빌드
-    python -m danbooru_rag.builder a          # 특정 variant만
+    python -m core.builder            # 전체 variant 빌드
+    python -m core.builder a          # 특정 variant만
 """
 
 import sys
@@ -145,7 +145,7 @@ def build_all(variants: tuple[str, ...] = INDEX_VARIANTS) -> None:
 
 
 if __name__ == "__main__":
-    # 인자로 특정 variant 지정 가능 (예: python -m danbooru_rag.builder a)
+    # 인자로 특정 variant 지정 가능 (예: python -m core.builder a)
     if len(sys.argv) > 1:
         target = tuple(v for v in sys.argv[1:] if v in INDEX_VARIANTS)
         if not target:

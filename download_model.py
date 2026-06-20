@@ -16,7 +16,7 @@ from pathlib import Path
 
 # config 의 상수를 재사용 (단일 출처 유지)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from danbooru_rag.config import (
+from core.config import (
     EMBEDDING_MODEL_HF_ID,
     EMBEDDING_MODEL_LOCAL_NAME,
     MODELS_DIR,

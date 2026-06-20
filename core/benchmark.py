@@ -9,9 +9,9 @@
   2) pipe  : 전체 2-pass 파이프라인을 variant 조합별로 실행 (LLM 포함, 느림).
 
 사용법:
-  python -m danbooru_rag.benchmark raw          # 순수 검색 비교
-  python -m danbooru_rag.benchmark pipe         # 파이프라인 비교
-  python -m danbooru_rag.benchmark raw "파란 머리 소녀" "비 오는 거리"   # 커스텀 쿼리
+  python -m core.benchmark raw          # 순수 검색 비교
+  python -m core.benchmark pipe         # 파이프라인 비교
+  python -m core.benchmark raw "파란 머리 소녀" "비 오는 거리"   # 커스텀 쿼리
 
 기본 쿼리셋은 아래 DEFAULT_QUERIES. 본인이 자주 쓰는 프롬프트로 교체 권장.
 """

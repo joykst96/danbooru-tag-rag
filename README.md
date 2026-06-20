@@ -41,12 +41,12 @@ via 2-pass cross-lingual retrieval. Built on local embeddings (multilingual-e5-l
 2. `.env` 작성 (`.env.example` 복사 후 값 채우기)
 3. `danbooru-tags.csv` 를 루트에 배치 (`name,category,post_count,description`)
 4. 임베딩 모델 다운로드(최초 1회): `python download_model.py`
-5. 인덱스 빌드: `python -m danbooru_rag.builder`
+5. 인덱스 빌드: `python -m core.builder`
 
 ### 사용
 
-- API 서버: `python -m danbooru_rag.api`
-- variant 비교: `python -m danbooru_rag.benchmark raw` (순수 검색) / `pipe` (파이프라인)
+- API 서버: `python -m core.api`
+- variant 비교: `python -m core.benchmark raw` (순수 검색) / `pipe` (파이프라인)
 
 ### 구조
 
@@ -100,12 +100,12 @@ Three indexes with different embedding-text composition, for comparison.
 2. Create `.env` (copy from `.env.example`)
 3. Place `danbooru-tags.csv` at the root (`name,category,post_count,description`)
 4. Download the embedding model (once): `python download_model.py`
-5. Build indexes: `python -m danbooru_rag.builder`
+5. Build indexes: `python -m core.builder`
 
 ### Usage
 
-- API server: `python -m danbooru_rag.api`
-- Compare variants: `python -m danbooru_rag.benchmark raw` (raw search) / `pipe` (pipeline)
+- API server: `python -m core.api`
+- Compare variants: `python -m core.benchmark raw` (raw search) / `pipe` (pipeline)
 
 ### Layout
 

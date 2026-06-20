@@ -136,7 +136,7 @@ async def direct_search(req: DirectSearchRequest):
 
 def main():
     import uvicorn
-    uvicorn.run("danbooru_rag.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("core.api:app", host="0.0.0.0", port=8000, reload=True)
 
 
 if __name__ == "__main__":
