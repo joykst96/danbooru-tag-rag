@@ -99,6 +99,7 @@ class TagDatabase:
         query_vector: list[float],
         top_k: int = 10,
         exclude_categories: set[int] | None = None,
+        include_categories: set[int] | None = None,
     ) -> list[SearchResult]:
         """
         벡터 유사도 검색.
@@ -107,15 +108,20 @@ class TagDatabase:
             query_vector: 질의 벡터 (1024차원)
             top_k: 반환 개수
             exclude_categories: 결과에서 제외할 category 집합 (선택)
+            include_categories: 이 category 집합만 남김 (화이트리스트, 선택).
+                include 가 주어지면 exclude 보다 우선 적용된다.
 
         Note:
             빌드 단계에서 이미 작가(1)/메타(5)를 제외했으므로,
-            여기 exclude_categories 는 추가적 런타임 필터링용(예: 캐릭터 분리 검색).
+            런타임 필터는 일반(0) vs 캐릭터+작품(3,4) '논리 분할' 검색에 쓴다.
+            측정상 캐릭터/작품 태그가 속성검색을 오염시키므로(은발→chi_lian 등),
+            속성 질의는 include={0}, 캐릭터 질의는 include={3,4} 로 분리한다.
+            물리 분할(테이블 2배) 대신 필터로 동일 효과를 얻는다.
         """
         try:
-            # 카테고리 필터가 있으면 LanceDB where 절로 미리 거른다.
-            # 단 top_k 가 필터로 줄어들 수 있으니 넉넉히 가져온 뒤 자른다.
-            fetch_k = top_k if not exclude_categories else top_k * 3
+            # 카테고리 필터가 있으면 후보가 줄 수 있으니 넉넉히 가져와 자른다.
+            has_filter = bool(exclude_categories) or bool(include_categories)
+            fetch_k = top_k if not has_filter else top_k * 4
             results = (
                 self.table
                 .search(query_vector)
@@ -126,7 +132,11 @@ class TagDatabase:
             out: list[SearchResult] = []
             for r in results:
                 cat = r["category"]
-                if exclude_categories and cat in exclude_categories:
+                # include 화이트리스트 우선. 없으면 exclude 블랙리스트.
+                if include_categories is not None:
+                    if cat not in include_categories:
+                        continue
+                elif exclude_categories and cat in exclude_categories:
                     continue
                 out.append(SearchResult(
                     tag=r["tag"],

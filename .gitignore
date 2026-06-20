@@ -9,6 +9,8 @@ logs/
 
 # 스캔 산출물
 *.txt
+*.csv
+*.log
 category_*.txt
 artist_samples.txt
 alias_preview.txt

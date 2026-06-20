@@ -72,10 +72,11 @@ class PipelineResult:
     keywords: list[str]                      # LLM 1차 키워드
     pass1_tags: list[str]                     # Pass1에서 나온 후보 태그명
     refined: list[str]                        # 정제된 영어 표현
-    final_tags: list[str]                     # 최종 선택 태그
+    final_tags: list[str]                     # 최종 선택 태그 (환각 필터 후)
     grouped: dict[str, list[str]]             # 카테고리별 구조화 후보
     nl_prompt: str = ""
     suspicious: list[str] = field(default_factory=list)
+    hallucinated: list[str] = field(default_factory=list)  # DB에 없어 제거된 태그
 
 
 async def _noop_callback(step: int, status: str, data: dict | None) -> None:
@@ -149,6 +150,17 @@ async def run_pipeline(
     final_tags = await llm.select_final(korean_prompt, grouped, cfg.select_temperature)
     if not final_tags:
         final_tags = [r.tag for r in confirmed2]  # 선택 실패 시 확정 태그로 폴백
+
+    # ── 환각 차단 (코드 보증) ──
+    # LLM이 후보에 없는 태그(예: silver_hair — DB에 실존하지 않음)를 생성하는
+    # 사례가 실측됨. 프롬프트 권고만으로는 못 막으므로, 최종 태그를 Pass2 DB의
+    # 실존 태그 집합에 대조해 없는 것은 코드로 제거한다. HANDOFF의
+    # "DB 통과 태그만 출력" 원칙을 LLM 선의가 아니라 코드로 강제.
+    final_tags, hallucinated = search_mod.filter_existing_tags(
+        final_tags, cfg.pass2_variant
+    )
+    if hallucinated:
+        logger.warning(f"환각 태그 제거 (DB에 없음): {hallucinated}")
     logger.info(f"최종 태그: {final_tags}")
 
     # -------------------------------------------------------------------
@@ -174,6 +186,7 @@ async def run_pipeline(
         grouped=grouped,
         nl_prompt=nl_prompt,
         suspicious=suspicious,
+        hallucinated=hallucinated,
     )
 
 

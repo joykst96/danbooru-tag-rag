@@ -44,6 +44,13 @@ Return ONLY a valid JSON array of English strings. No markdown, no extra text.""
 SYSTEM_SELECT = """You are a strict Danbooru tag selector.
 Given a Korean intent and structured candidate tags (with categories),
 choose the final set of tags that faithfully represent the intent.
+
+CRITICAL: You may ONLY output tags that appear VERBATIM in the candidate list.
+Never invent, complete, normalize, or modify a tag. If the intent is "은발"
+(silver hair) and the candidate list contains "grey_hair" but not "silver_hair",
+you MUST output "grey_hair" — outputting "silver_hair" is forbidden because it is
+not in the candidates. Copy tags exactly as given, character for character.
+
 Exclude tags pulled in only by vector similarity but not actually described.
 Return ONLY a valid JSON array of the chosen English tag strings. No markdown."""
 

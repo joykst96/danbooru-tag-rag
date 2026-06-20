@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Danbooru Prompt Helper</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #181b22;
+        --border: #2a2e38;
+        --text: #e6e8ee;
+        --dim: #8b91a0;
+        --accent: #7aa2f7;
+        --ok: #9ece6a;
+        --err: #f7768e;
+        --warn: #e0af68;
+        /* JS(복사 버튼 강조)에서 참조하는 변수 */
+        --primary: #7aa2f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 "Segoe UI",
+          "Malgun Gothic",
+          sans-serif;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px;
+      }
+      .header h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      .header .subtitle {
+        color: var(--dim);
+        font-size: 13px;
+        margin: 0 0 20px;
+      }
+      .main-grid {
+        display: grid;
+        grid-template-columns: 420px 1fr;
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        .main-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      /* PC: 결과 패널이 스크롤을 따라오게 */
+      @media (min-width: 901px) {
+        #result_panel {
+          position: sticky;
+          top: 16px;
+          max-height: calc(100vh - 32px);
+          overflow-y: auto;
+          scrollbar-width: none;
+        }
+        #result_panel::-webkit-scrollbar {
+          display: none;
+        }
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--dim);
+        margin: 10px 0 4px;
+      }
+      .form-group:first-child label {
+        margin-top: 0;
+      }
+      textarea,
+      input[type="range"] {
+        width: 100%;
+        background: #11141a;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font: inherit;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 120px;
+        scrollbar-width: none;
+      }
+      textarea::-webkit-scrollbar {
+        display: none;
+      }
+      textarea:focus,
+      input[type="text"]:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      input[type="text"] {
+        width: 100%;
+        background: #11141a;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font: inherit;
+      }
+      /* 슬라이더 */
+      .slider-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        padding: 0;
+        height: 6px;
+        background: #11141a;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 0;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 0;
+      }
+      .val-display {
+        flex: 0 0 auto;
+        min-width: 42px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--text);
+        font-size: 13px;
+      }
+      /* 체크박스 */
+      .checkbox-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .checkbox-container input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .checkbox-container label {
+        margin: 0;
+        cursor: pointer;
+        color: var(--text);
+        font-size: 13px;
+      }
+      /* 생성 버튼 */
+      .btn-generate {
+        width: 100%;
+        margin-top: 16px;
+        padding: 11px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #0b0e14;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
+      .btn-generate:disabled {
+        background: #3a4154;
+        color: #767e92;
+        cursor: not-allowed;
+      }
+      .spinner {
+        display: none;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(11, 14, 20, 0.3);
+        border-top-color: #0b0e14;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .error-msg {
+        display: none;
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(247, 118, 142, 0.1);
+        border: 1px solid rgba(247, 118, 142, 0.3);
+        color: var(--err);
+        font-size: 13px;
+      }
+      /* 빈 상태 */
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        min-height: 320px;
+        color: var(--dim);
+        background: var(--panel);
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 24px;
+      }
+      .empty-state svg {
+        width: 44px;
+        height: 44px;
+        margin-bottom: 12px;
+        opacity: 0.5;
+      }
+      .empty-state p {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      /* 결과 컨테이너 */
+      .results-container {
+        display: none;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .result-box {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .result-box h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        margin: 0 0 12px;
+        font-weight: 600;
+      }
+      /* 태그들 */
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .tag {
+        display: inline-block;
+        padding: 6px 12px;
+        background: var(--tag-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--text);
+        cursor: default;
+      }
+      
+      /* 글로벌 JS 툴팁 */
+      .custom-tooltip {
+        position: fixed;
+        background: rgba(11, 14, 20, 0.95);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        border-radius: 6px;
+        z-index: 9999;
+        pointer-events: none;
+        width: max-content;
+        max-width: 300px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        word-break: keep-all;
+        padding: 8px 12px;
+        display: none;
+        transition: opacity 0.1s;
+      }
+
+      .tag.candidate {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--dim);
+        border-style: dashed;
+      }
+
+      /* 카테고리별 태그 색상 (candidate보다 뒤에 위치하여 우선순위 확보) */
+      .tag.tag-cat-0 {
+        background: hsla(210, 80%, 60%, 0.12);
+        border-color: hsla(210, 80%, 60%, 0.3);
+        color: hsl(210, 80%, 75%);
+      }
+      .tag.tag-cat-1 {
+        background: hsla(350, 80%, 60%, 0.12);
+        border-color: hsla(350, 80%, 60%, 0.3);
+        color: hsl(350, 80%, 75%);
+      }
+      .tag.tag-cat-3 {
+        background: hsla(280, 70%, 60%, 0.12);
+        border-color: hsla(280, 70%, 60%, 0.3);
+        color: hsl(280, 70%, 75%);
+      }
+      .tag.tag-cat-4 {
+        background: hsla(140, 60%, 50%, 0.12);
+        border-color: hsla(140, 60%, 50%, 0.3);
+        color: hsl(140, 60%, 70%);
+      }
+      .tag.tag-cat-5 {
+        background: hsla(30, 80%, 50%, 0.12);
+        border-color: hsla(30, 80%, 50%, 0.3);
+        color: hsl(30, 80%, 70%);
+      }
+      .tag.deletable {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .tag.deletable:hover {
+        background: rgba(255, 107, 107, 0.15);
+        color: #ff6b6b;
+        border-color: #ff6b6b;
+        text-decoration: line-through;
+      }
+      /* 의심 태그 (경고 아이콘만 표시) */
+      .tag.suspicious::before {
+        content: '⚠️ ';
+        margin-right: 2px;
+      }
+      .tag.copyable {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .tag.copyable:hover {
+        background: rgba(88, 166, 255, 0.15);
+        color: #58a6ff;
+        border-color: #58a6ff;
+      }
+
+      .copy-btn {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: auto;
+        margin: 0;
+        padding: 4px 12px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #11141a;
+        color: var(--dim);
+        cursor: pointer;
+        transition:
+          border-color 0.12s,
+          color 0.12s;
+      }
+      .copy-btn:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+      .final-prompt {
+        background: #11141a;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text);
+        word-break: break-word;
+        white-space: pre-wrap;
+        min-height: 24px;
+      }
+      /* 태그 칩 */
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: flex-start;
+        align-content: flex-start;
+      }
+      .tag {
+        flex: 0 0 auto;
+        padding: 5px 10px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #11141a;
+        color: var(--text);
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+      }
+      .advanced-settings {
+        margin-top: 16px;
+        background: #11141a;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+      .advanced-settings summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        user-select: none;
+        outline: none;
+      }
+      .advanced-settings summary::-webkit-details-marker {
+        display: none;
+      }
+      .advanced-settings summary::before {
+        content: '▶';
+        font-size: 10px;
+        margin-right: 8px;
+        color: var(--dim);
+        transition: transform 0.2s ease;
+      }
+      .advanced-settings[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .advanced-settings .settings-content {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .tag.candidate {
+        color: var(--dim);
+        border-style: dashed;
+      }
+      .tag.deletable {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .tag.deletable:hover {
+        background: rgba(255, 107, 107, 0.15);
+        color: #ff6b6b;
+        border-color: #ff6b6b;
+        text-decoration: line-through;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="header">
+        <h1>Danbooru Prompt Helper</h1>
+        <p class="subtitle">
+          입력하신 한국어 묘사를 바탕으로 가장 적합한 Danbooru 태그와 자연어 프롬프트를 생성합니다.
+        </p>
+        <div style="margin-top: 16px; margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; cursor: default;">
+          <span class="tag tag-cat-0" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">일반태그</span>
+          <span class="tag tag-cat-1" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작가태그</span>
+          <span class="tag tag-cat-3" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작품태그</span>
+          <span class="tag tag-cat-4" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">캐릭터</span>
+          <span class="tag tag-cat-5" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">메타태그</span>
+        </div>
+      </div>
+
+      <div class="main-grid">
+        <!-- 왼쪽 패널: 입력부 -->
+        <div class="panel">
+          <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">LLM 태그 생성 (권장)</h3>
+          <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 16px; line-height: 1.4;">
+            한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.
+          </p>
+          <details class="advanced-settings">
+            <summary>고급 설정 (유사도 및 온도 조절)</summary>
+            <div class="settings-content">
+              <div class="form-group">
+                <label for="threshold">검색 유사도 기준 (Threshold)</label>
+                <div class="slider-group">
+                  <input
+                    type="range"
+                    id="threshold"
+                    min="0.5"
+                    max="1.0"
+                    step="0.01"
+                    value="0.80"
+                  />
+                  <span class="val-display" id="threshold_val">0.80</span>
+                </div>
+              </div>
+
+
+
+              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
+              
+              <div style="margin-bottom: -4px;">
+                <h4 style="margin: 0 0 4px 0; font-size: 13px; color: var(--text);">온도 (Temperature) 설정</h4>
+                <p style="font-size: 11px; color: var(--dim); margin: 0; line-height: 1.4;">
+                  낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
+                  (너무 높으면 미친 소리를 하기 시작합니다.)
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
+                <div class="slider-group">
+                  <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
+                  <span class="val-display" id="kw_temp_val">0.1</span>
+                </div>
+                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                  <span style="color: #ff6b6b;"><b>※ 전처리기는 0.1을 강력히 추천합니다.</b></span><br/>
+                  온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
+                <div class="slider-group">
+                  <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
+                  <span class="val-display" id="nl_temp_val">0.4</span>
+                </div>
+                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                  자연어 프롬프트를 얼마나 창의적이고 다채롭게 묘사할지 결정합니다.<br/>
+                  낮추면 딱딱해지고 높이면 풍부해지지만, 과하면 묘사가 엇나갈 수 있습니다.
+                </p>
+              </div>
+            </div>
+          </details>
+
+          <div class="form-group" style="margin-top: 24px;">
+            <label for="prompt">이미지 묘사 (한국어)</label>
+            <textarea
+              id="prompt"
+              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)&#10;※ 짧은 한두 개 단어만 입력하면 랜덤 프롬프트 생성기처럼 활용할 수 있습니다."
+            ></textarea>
+
+            <div class="checkbox-container">
+              <input
+                type="checkbox"
+                id="replace_underscores"
+                onchange="updatePromptDisplay()"
+              />
+              <label for="replace_underscores"
+                >언더스코어(_)를 공백으로 치환</label
+              >
+            </div>
+            <div class="checkbox-container">
+              <input
+                type="checkbox"
+                id="escape_parentheses"
+                onchange="updatePromptDisplay()"
+              />
+              <label for="escape_parentheses"
+                >소괄호 '()' 이스케이프 '\(\)' 처리</label
+              >
+            </div>
+          </div>
+
+          <button
+            class="btn-generate"
+            id="generate_btn"
+            onclick="generateTags()"
+          >
+            <span>태그 생성하기</span>
+            <div class="spinner" id="spinner"></div>
+          </button>
+
+          <div class="error-msg" id="error_msg"></div>
+          
+          <hr style="border: 0; border-top: 1px solid var(--border); margin: 32px 0 24px 0;" />
+          
+          <div class="form-group">
+            <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">벡터DB 단일태그 직접조회</h3>
+            <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 12px; line-height: 1.4;">
+              LLM 전처리를 거치지 않고 입력한 단일 단어 그대로 벡터 DB를 검색하여 유사한 태그를 찾습니다.
+            </p>
+            <input type="text" id="direct_query" placeholder="조회할 단어를 입력하세요 (예: 1girl)" />
+            
+            <label for="direct_threshold">유사도 임계값 - 권장: 0.60</label>
+            <div class="slider-group" style="margin-bottom: 16px;">
+              <input type="range" id="direct_threshold" min="0.3" max="1.0" step="0.01" value="0.60" oninput="document.getElementById('direct_threshold_val').textContent = parseFloat(this.value).toFixed(2);" />
+              <span class="val-display" id="direct_threshold_val">0.60</span>
+            </div>
+            
+            <button
+              class="btn-generate"
+              id="direct_search_btn"
+              onclick="searchDirectDB()"
+              style="background: #2a2e38; border-color: var(--border); color: var(--text); margin-top: 0;"
+            >
+              <span>조회하기</span>
+              <div class="spinner" id="direct_spinner" style="border-top-color: var(--text);"></div>
+            </button>
+            
+            <div class="error-msg" id="direct_error_msg"></div>
+            
+            <div class="tag-list" id="res_direct_db" style="margin-top: 16px; display: none;"></div>
+          </div>
+        </div>
+
+        <!-- 오른쪽 패널: 결과부 -->
+        <div id="result_panel">
+          <div id="empty_state" class="empty-state">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+              />
+            </svg>
+            <p>
+              한국어 묘사를 입력하고 생성 버튼을 누르면<br />여기에 결과가
+              표시됩니다.
+            </p>
+            <p id="queue_msg" style="display:none; font-size:16px; color:var(--primary,#6e8efb); font-weight:600; margin-top:8px;"></p>
+          </div>
+
+          <div class="results-container" id="results_container">
+            <!-- Danbooru태그 박스 (핵심 결과, 최상단) -->
+            <div class="result-box" id="final_prompt_box">
+              <h3>Danbooru태그</h3>
+              <button
+                class="copy-btn"
+                onclick="copyToClipboard('res_final_prompt')"
+              >
+                복사하기
+              </button>
+              <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
+              <p style="margin-top: 10px; font-size: 11px; color: var(--dim); line-height: 1.4;">
+                <span style="font-weight: bold;">※ ⚠️</span>: LLM이 원본 묘사와 무관하다고(예: 작가태그 등) 판단한 태그입니다.
+              </p>
+            </div>
+
+            <!-- 자연어 프롬프트 박스 (보조용) -->
+            <div class="result-box" id="nl_prompt_box">
+              <h3>자연어 프롬프트 (보조용)</h3>
+              <button class="copy-btn" onclick="copyToClipboard('res_nl_prompt')">
+                복사하기
+              </button>
+              <div class="final-prompt" id="res_nl_prompt"></div>
+              <button class="btn-generate" id="copy_all_btn" onclick="copyAll()" style="margin-top: 12px; padding: 8px; font-size: 13px; background: #2a2e38; color: var(--text);">
+                모두 복사하기 (단보루 태그 + 자연어)
+              </button>
+            </div>
+
+            <!-- 키워드 박스 -->
+            <div class="result-box" id="keywords_box">
+              <h3>추출된 핵심 키워드</h3>
+              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">한국어</div>
+              <div class="tag-list" id="res_keywords_ko"></div>
+              <div style="border-top: 1px solid var(--border, #333); margin: 10px 0;"></div>
+              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">영어 (번역)</div>
+              <div class="tag-list" id="res_keywords_en"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentResultData = null;
+      let lastDirectDBResults = null;
+      let tagInfo = new Map();
+
+      async function loadTagDescriptions() {
+        try {
+          const response = await fetch('/danbooru-tags.csv');
+          if (!response.ok) return;
+          const text = await response.text();
+          
+          const lines = text.split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            const firstComma = line.indexOf(',');
+            if (firstComma === -1) continue;
+            const name = line.substring(0, firstComma).trim();
+            
+            const secondComma = line.indexOf(',', firstComma + 1);
+            if (secondComma === -1) continue;
+            const categoryStr = line.substring(firstComma + 1, secondComma).trim();
+            
+            const thirdComma = line.indexOf(',', secondComma + 1);
+            
+            if (thirdComma !== -1) {
+              let desc = line.substring(thirdComma + 1).trim();
+              if (desc.startsWith('"') && desc.endsWith('"')) {
+                desc = desc.substring(1, desc.length - 1);
+              }
+              tagInfo.set(name, { desc: desc, category: parseInt(categoryStr) });
+            }
+          }
+          console.log("Loaded tag info: " + tagInfo.size);
+        } catch (err) {
+          console.warn("Failed to load tag info:", err);
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", loadTagDescriptions);
+
+      // 글로벌 툴팁 JS 로직
+      const globalTooltip = document.createElement('div');
+      globalTooltip.className = 'custom-tooltip';
+      document.body.appendChild(globalTooltip);
+
+      document.addEventListener('mouseover', (e) => {
+        const tag = e.target.closest('[data-tooltip]');
+        if (tag) {
+          globalTooltip.textContent = tag.getAttribute('data-tooltip');
+          globalTooltip.style.display = 'block';
+          
+          const rect = tag.getBoundingClientRect();
+          let topPos = rect.top - 8;
+          let transform = 'translate(-50%, -100%)';
+          
+          // 화면 위쪽으로 잘릴 것 같으면 툴팁을 아래로 표시
+          if (topPos < 50) {
+            topPos = rect.bottom + 8;
+            transform = 'translate(-50%, 0)';
+          }
+          
+          // 화면 왼쪽/오른쪽으로 잘릴 것 같으면 보정 (선택적)
+          let leftPos = rect.left + (rect.width / 2);
+          
+          globalTooltip.style.left = leftPos + 'px';
+          globalTooltip.style.top = topPos + 'px';
+          globalTooltip.style.transform = transform;
+        }
+      });
+
+      document.addEventListener('mouseout', (e) => {
+        const tag = e.target.closest('[data-tooltip]');
+        if (tag) {
+          globalTooltip.style.display = 'none';
+        }
+      });
+
+      // 스크롤 시 툴팁 숨기기 (위치 어긋남 방지)
+      document.addEventListener('scroll', () => {
+        globalTooltip.style.display = 'none';
+      }, true);
+
+      const thresholdSlider = document.getElementById("threshold");
+      const thresholdVal = document.getElementById("threshold_val");
+      const kwTempSlider = document.getElementById("kw_temp");
+      const kwTempVal = document.getElementById("kw_temp_val");
+      const nlTempSlider = document.getElementById("nl_temp");
+      const nlTempVal = document.getElementById("nl_temp_val");
+
+      thresholdSlider.addEventListener("input", (e) => {
+        thresholdVal.textContent = parseFloat(e.target.value).toFixed(2);
+      });
+      kwTempSlider.addEventListener("input", (e) => {
+        kwTempVal.textContent = parseFloat(e.target.value).toFixed(1);
+      });
+      nlTempSlider.addEventListener("input", (e) => {
+        nlTempVal.textContent = parseFloat(e.target.value).toFixed(1);
+      });
+
+      async function generateTags() {
+        const btn = document.getElementById("generate_btn");
+        const spinner = document.getElementById("spinner");
+        const btnText = btn.querySelector("span");
+        const resultsContainer = document.getElementById("results_container");
+        const emptyState = document.getElementById("empty_state");
+        const errorMsg = document.getElementById("error_msg");
+
+        // 초기화
+        errorMsg.style.display = "none";
+        resultsContainer.style.display = "none";
+        emptyState.style.display = "flex";
+        btn.disabled = true;
+        spinner.style.display = "block";
+        btnText.textContent = "생성 준비 중...";
+        
+        currentResultData = {};
+
+        const payload = {
+          prompt: document.getElementById("prompt").value.trim(),
+          threshold: parseFloat(document.getElementById("threshold").value),
+          kw_temperature: parseFloat(document.getElementById("kw_temp").value),
+          nl_temperature: parseFloat(document.getElementById("nl_temp").value),
+        };
+
+        const apiUrl = "/api/generate";
+
+        if (!payload.prompt) {
+          showError("이미지 묘사를 입력해주세요.");
+          resetButton();
+          return;
+        }
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(
+              errData.detail || `서버 에러가 발생했습니다: ${response.status}`,
+            );
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const chunk = JSON.parse(line);
+              
+              if (chunk.status) {
+                btnText.textContent = chunk.status;
+                // 대기 메시지는 결과 영역(빈 상태)에 크게 표시
+                const qm = document.getElementById("queue_msg");
+                if (qm) {
+                  if (chunk.status.indexOf("대기") !== -1) {
+                    qm.textContent = "⏳ " + chunk.status;
+                    qm.style.display = "block";
+                  } else {
+                    qm.style.display = "none";
+                  }
+                }
+              }
+              if (chunk.data && Object.keys(chunk.data).length > 0) {
+                currentResultData = { ...currentResultData, ...chunk.data };
+                displayResults();
+              }
+            }
+          }
+        } catch (err) {
+          showError(err.message || "API 서버에 연결할 수 없습니다.");
+        } finally {
+          resetButton();
+        }
+      }
+
+      async function searchDirectDB() {
+        const query = document.getElementById("direct_query").value.trim();
+        const threshold = parseFloat(document.getElementById("direct_threshold").value);
+        
+        const btn = document.getElementById("direct_search_btn");
+        const spinner = document.getElementById("direct_spinner");
+        const btnText = btn.querySelector("span");
+        const errorMsg = document.getElementById("direct_error_msg");
+        const resultContainer = document.getElementById("res_direct_db");
+        
+        errorMsg.style.display = "none";
+        resultContainer.style.display = "none";
+        
+        if (!query) {
+          errorMsg.textContent = "조회할 단어를 입력해주세요.";
+          errorMsg.style.display = "block";
+          return;
+        }
+
+        btn.disabled = true;
+        spinner.style.display = "block";
+        btnText.textContent = "조회 중...";
+
+        try {
+          const response = await fetch("/api/direct_search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: query,
+              threshold: threshold,
+              top_k: 20
+            }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || `서버 에러가 발생했습니다: ${response.status}`);
+          }
+
+          const data = await response.json();
+          lastDirectDBResults = data.results || [];
+          renderDirectDBResults();
+          
+          const resultContainer = document.getElementById("res_direct_db");
+          resultContainer.style.display = "flex";
+          
+        } catch (err) {
+          errorMsg.textContent = err.message || "API 서버에 연결할 수 없습니다.";
+          errorMsg.style.display = "block";
+        } finally {
+          btn.disabled = false;
+          spinner.style.display = "none";
+          btnText.textContent = "조회하기";
+        }
+      }
+
+      function renderDirectDBResults() {
+        if (!lastDirectDBResults) return;
+        const resultContainer = document.getElementById("res_direct_db");
+        const replaceUnderscores = document.getElementById("replace_underscores").checked;
+        const escapeParentheses = document.getElementById("escape_parentheses").checked;
+        
+        resultContainer.innerHTML = "";
+        
+        if (lastDirectDBResults.length === 0) {
+          resultContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
+        } else {
+          lastDirectDBResults.forEach((item) => {
+            const el = document.createElement("span");
+            el.className = "tag candidate copyable";
+            
+            let tagText = item.tag;
+            if (replaceUnderscores) tagText = tagText.replace(/_/g, " ");
+            if (escapeParentheses) tagText = tagText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+            
+            el.textContent = `${tagText} (${item.score.toFixed(2)})`;
+            el.style.cursor = "pointer";
+            
+            let descText = "";
+            const cleanTag = item.tag.trim();
+            if (tagInfo.has(cleanTag)) {
+              const info = tagInfo.get(cleanTag);
+              descText = info.desc;
+              el.classList.add("tag-cat-" + info.category);
+            }
+            
+            let tooltipDesc = descText ? descText : item.tag + "\n\n(설명 없음)";
+            el.setAttribute("data-tooltip", tooltipDesc + "\n\n(클릭하여 복사)");
+            
+            el.onclick = () => {
+              doCopy(tagText, () => {
+                const originalText = el.textContent;
+                const originalBg = el.style.background;
+                const originalColor = el.style.color;
+                const originalBorder = el.style.borderColor;
+                const originalWidth = el.style.width;
+                const originalTextAlign = el.style.textAlign;
+
+                const currentWidth = el.offsetWidth;
+                el.style.width = currentWidth + "px";
+                el.style.display = "inline-flex";
+                el.style.justifyContent = "center";
+                el.style.alignItems = "center";
+                el.style.boxSizing = "border-box";
+
+                el.textContent = "복사!";
+                el.style.color = "#0b0e14";
+                el.style.background = "var(--primary)";
+                el.style.borderColor = "var(--primary)";
+
+                setTimeout(() => {
+                  el.textContent = originalText;
+                  el.style.background = originalBg;
+                  el.style.color = originalColor;
+                  el.style.borderColor = originalBorder;
+                  el.style.width = originalWidth;
+                  el.style.display = "";
+                  el.style.justifyContent = "";
+                  el.style.alignItems = "";
+                }, 1000);
+              });
+            };
+            
+            resultContainer.appendChild(el);
+          });
+        }
+      }
+
+      function updatePromptDisplay() {
+        if (currentResultData) displayResults();
+        if (lastDirectDBResults) renderDirectDBResults();
+      }
+
+      function displayResults() {
+        if (!currentResultData) return;
+        const data = currentResultData;
+        const replaceUnderscores = document.getElementById("replace_underscores").checked;
+        const escapeParentheses = document.getElementById("escape_parentheses").checked;
+
+        document.getElementById("empty_state").style.display = "none";
+        document.getElementById("results_container").style.display = "flex";
+
+        // 1. 자연어 프롬프트 처리
+        const nlPromptBox = document.getElementById("nl_prompt_box");
+        if (data.english_prompt) {
+          nlPromptBox.style.display = "block";
+          document.getElementById("res_nl_prompt").textContent = data.english_prompt;
+        } else {
+          nlPromptBox.style.display = "none";
+        }
+
+        // 2. 최종 단보루 프롬프트 처리
+        const finalPromptBox = document.getElementById("res_final_prompt").closest(".result-box");
+        if (data.final_prompt) {
+          finalPromptBox.style.display = "block";
+          const finalContainer = document.getElementById("res_final_prompt");
+          finalContainer.innerHTML = "";
+          
+          let tagsArray = data.final_prompt.split(", ").filter(t => t.trim() !== "");
+          const suspiciousList = data.suspicious_tags || [];
+          
+          tagsArray.forEach((tag) => {
+            const el = document.createElement("span");
+            el.className = "tag deletable";
+            let tooltip = "클릭하여 삭제";
+            const cleanTag = tag.trim();
+            let hasDesc = false;
+            let descText = "";
+            
+            if (tagInfo.has(cleanTag)) {
+              const info = tagInfo.get(cleanTag);
+              descText = info.desc;
+              hasDesc = true;
+              tooltip = (descText ? descText : "설명 없음") + "\n\n(클릭하여 삭제)";
+              el.classList.add("tag-cat-" + info.category);
+            } else {
+              tooltip = "설명을 찾을 수 없습니다.\n\n(클릭하여 삭제)";
+            }
+            
+            if (suspiciousList.includes(tag)) {
+              el.classList.add("suspicious");
+              const suspiciousDesc = hasDesc ? descText : "";
+              el.setAttribute("data-tooltip", "문맥상 의심스러운 태그 (클릭하여 삭제)\n\n" + (suspiciousDesc ? suspiciousDesc : "설명 없음"));
+            } else {
+              el.setAttribute("data-tooltip", tooltip);
+            }
+            
+            let tagText = tag;
+            if (replaceUnderscores) tagText = tagText.replace(/_/g, " ");
+            if (escapeParentheses) tagText = tagText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+            
+            el.textContent = tagText;
+            el.onclick = () => {
+              // 해당 태그 삭제 로직
+              const newTags = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "" && t !== tag);
+              currentResultData.final_prompt = newTags.join(", ");
+              displayResults(); // 재렌더링
+            };
+            finalContainer.appendChild(el);
+          });
+          
+          if (tagsArray.length === 0) {
+            finalContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
+          }
+        } else {
+          finalPromptBox.style.display = "none";
+        }
+
+        // 3. 키워드 처리 (한국어 + 영어)
+        const kwBox = document.getElementById("keywords_box");
+        const hasKo = data.ko_units && data.ko_units.length > 0;
+        const hasEn = data.keywords && data.keywords.length > 0;
+        if (hasKo || hasEn) {
+          kwBox.style.display = "block";
+
+          const koContainer = document.getElementById("res_keywords_ko");
+          koContainer.innerHTML = "";
+          if (hasKo) {
+            data.ko_units.forEach((kw) => {
+              const el = document.createElement("span");
+              el.className = "tag";
+              el.textContent = kw;   // 한국어는 치환/이스케이프 불필요
+              koContainer.appendChild(el);
+            });
+          }
+
+          const enContainer = document.getElementById("res_keywords_en");
+          enContainer.innerHTML = "";
+          if (hasEn) {
+            data.keywords.forEach((kw) => {
+              const el = document.createElement("span");
+              el.className = "tag";
+              let kwText = kw;
+              if (replaceUnderscores) kwText = kwText.replace(/_/g, " ");
+              if (escapeParentheses) kwText = kwText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+              el.textContent = kwText;
+              enContainer.appendChild(el);
+            });
+          }
+        } else {
+          kwBox.style.display = "none";
+        }
+      }
+
+      function showError(msg) {
+        const errorEl = document.getElementById("error_msg");
+        errorEl.textContent = msg;
+        errorEl.style.display = "block";
+      }
+
+      function resetButton() {
+        const btn = document.getElementById("generate_btn");
+        const spinner = document.getElementById("spinner");
+        const btnText = btn.querySelector("span");
+
+        btn.disabled = false;
+        spinner.style.display = "none";
+        btnText.textContent = "태그 생성하기";
+      }
+
+      // 복사 공통 헬퍼: HTTPS/localhost 가 아니면 navigator.clipboard 가 없으므로
+      // execCommand 폴백을 쓴다. 성공 시 onOk 콜백 실행.
+      function doCopy(text, onOk) {
+        if (!text) return;
+        const fallback = () => {
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            if (ok && onOk) onOk();
+            else if (!ok) alert("복사 실패: 직접 선택해 복사해주세요.");
+          } catch (e) {
+            alert("복사 실패: 직접 선택해 복사해주세요.");
+          }
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => onOk && onOk()).catch(fallback);
+        } else {
+          fallback();
+        }
+      }
+
+      function copyToClipboard(elementId) {
+        let text = "";
+        if (elementId === "res_final_prompt") {
+          const replaceUnderscores = document.getElementById("replace_underscores").checked;
+          const escapeParentheses = document.getElementById("escape_parentheses").checked;
+          text = currentResultData.final_prompt || "";
+          if (replaceUnderscores) text = text.replace(/_/g, " ");
+          if (escapeParentheses) text = text.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+        } else {
+          text = document.getElementById(elementId).textContent;
+        }
+
+        doCopy(text, () => {
+          const box = document.getElementById(elementId).closest(".result-box");
+          const btn = box.querySelector(".copy-btn");
+          const originalText = btn.textContent;
+          const originalBg = btn.style.background;
+          const originalColor = btn.style.color;
+
+          btn.textContent = "복사 완료!";
+          btn.style.color = "#0b0e14";
+          btn.style.borderColor = "var(--primary)";
+          btn.style.background = "var(--primary)";
+
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.color = originalColor;
+            btn.style.borderColor = "";
+            btn.style.background = originalBg;
+          }, 2000);
+        });
+      }
+
+      function copyAll() {
+        const replaceUnderscores = document.getElementById("replace_underscores").checked;
+        const escapeParentheses = document.getElementById("escape_parentheses").checked;
+        let finalTags = currentResultData.final_prompt || "";
+        if (replaceUnderscores) finalTags = finalTags.replace(/_/g, " ");
+        if (escapeParentheses) finalTags = finalTags.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+        const nlPrompt = document.getElementById("res_nl_prompt").textContent.trim();
+        
+        let combined = "";
+        if (finalTags && finalTags !== "매칭된 태그가 없습니다." && nlPrompt) {
+          combined = finalTags + ". " + nlPrompt;
+        } else if (finalTags && finalTags !== "매칭된 태그가 없습니다.") {
+          combined = finalTags;
+        } else if (nlPrompt) {
+          combined = nlPrompt;
+        }
+
+        if (!combined) return;
+
+        doCopy(combined, () => {
+          const btn = document.getElementById("copy_all_btn");
+          const originalText = "모두 복사하기 (단보루 태그 + 자연어)";
+          const originalBg = btn.style.background;
+          const originalColor = btn.style.color;
+
+          btn.textContent = "모두 복사 완료!";
+          btn.style.color = "#0b0e14";
+          btn.style.borderColor = "var(--primary)";
+          btn.style.background = "var(--primary)";
+
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.color = originalColor;
+            btn.style.borderColor = "";
+            btn.style.background = originalBg;
+          }, 2000);
+        });
+      }
+    </script>
+  </body>
+</html>
