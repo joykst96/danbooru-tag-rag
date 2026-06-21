@@ -34,12 +34,12 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 ```
 
 - **2분할 DB**: 일반(cat 0) / 캐릭터·작품(cat 3,4)을 분리 검색한다. 데이터셋이 작아 캐릭터 태그가 속성 검색을 오염시키는 현상(은발 → 특정 캐릭터)을 카테고리 필터로 차단. 모든 카테고리(작가 1·메타 5 포함)를 인덱싱하되 프롬프트 파이프라인은 where절로 필요한 카테고리만 조회한다(임베딩 벡터는 태그별 독립이라 상호 오염 없음). 작가·메타는 직접조회에서 명시 선택 시에만 노출.
-- **인원수 보호**: 검색으로 확정하되 LLM 선별 단계에서 인원수 슬롯을 따로 보호해, 다인물 장면이 solo로 뭉개지는 것을 막는다.
+- **인원수 보호 / 정렬**: 검색으로 확정하되 LLM 선별 단계에서 인원수 슬롯을 따로 보호해 다인물 장면이 solo로 뭉개지는 것을 막고, 인원수 태그(1girl, 2girls 등)를 최종 출력 맨 앞에 배치한다.
 - **단계별 스트리밍**: 각 단계가 끝나는 즉시 UI에 표시(키워드 먼저 보이고 최종은 나중). 동시 요청은 1개씩 직렬 처리하며 대기 순번을 실시간 표시한다.
 
 ### 두 가지 입력 모드
 
-- **기본 모드**: 한 문장을 통째로 넣는다. 위 4-step 파이프라인을 그대로 탄다.
+- **기본 모드**: 한 문장을 통째로 넣는다. 위 4-step 파이프라인을 그대로 탄다. 기본 검색 풀은 일반(cat 0)이며, 고급 옵션으로 검색 풀에 작가/작품/캐릭터/메타를 추가할 수 있다(경고 동반 — 일반 외 카테고리는 출력 품질을 떨어뜨릴 수 있음).
 - **고급(분할) 모드**: 인물별 칸(작품명·캐릭터명·묘사) + 배경칸으로 나눠 입력한다. 다인물 장면에서 인물이 섞이는 것을 막고 이름 기반 자연어 프롬프트를 만든다.
   - 작품·캐릭터 태그는 DB 후보군을 LLM이 사용자 입력 기준으로 선택한다(동명이인·동일작품 조연 구분). 작품 태그는 캐릭터 추론과 자연어에만 쓰고 최종 Danbooru 태그 출력에는 넣지 않는다.
   - 배경칸에 적힌 인물 이름은 검색에서 제거해 `xxx_(cosplay)` 류 오염을 막는다.
@@ -135,7 +135,7 @@ Both are blocked structurally.
 
 Key structures: a **two-way DB split** (general vs character/series) to stop character tags from polluting attribute search; **headcount protection** so multi-person scenes aren't collapsed to solo; **step streaming** with a single-flight queue and live wait position.
 
-Two input modes: a **basic mode** (one sentence through the 4-step pipeline) and an **advanced split mode** (per-character fields + background) where the LLM picks character/series tags from DB candidates by user intent, series tags feed inference/NL only (not the final tag output), and character names in the background field are stripped to avoid `_(cosplay)` pollution. **Fixed tags** (quality first, artists last with `(artist:weight)` and optional `@` prefix) bypass the LLM/DB and are appended verbatim. All categories are indexed (artists/meta included); the prompt pipeline filters by category via where-clauses.
+Two input modes: a **basic mode** (one sentence through the 4-step pipeline; default search pool is general/cat 0, with an advanced option to add artist/copyright/character/meta to the pool — warned, since non-general categories can degrade output quality) and an **advanced split mode** (per-character fields + background) where the LLM picks character/series tags from DB candidates by user intent, series tags feed inference/NL only (not the final tag output), and character names in the background field are stripped to avoid `_(cosplay)` pollution. **Fixed tags** (quality first, artists last with `(artist:weight)` and optional `@` prefix) bypass the LLM/DB and are appended verbatim. All categories are indexed (artists/meta included); the prompt pipeline filters by category via where-clauses.
 
 ### Index variant
 

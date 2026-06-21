@@ -26,7 +26,7 @@ from . import search as search_mod
 from .pipeline_decomposed import run_decomposed_pipeline, stream_decomposed_pipeline
 from .pipeline_split import stream_split_pipeline, CharBlock
 from . import genlog
-from .config import PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K
+from .config import PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K, CATEGORY_LABELS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,6 +134,9 @@ class GenerateRequest(BaseModel):
     threshold: float = Field(default=0.0)
     kw_temperature: float = Field(default=0.1)
     nl_temperature: float = Field(default=0.4)
+    search_categories: list[int] | None = Field(
+        default=None, description="검색 풀 카테고리(고급). None/빈값이면 일반(cat0)만"
+    )
 
 
 class DirectSearchRequest(BaseModel):
@@ -182,6 +185,7 @@ async def generate(req: GenerateRequest):
                 en_variant=MAIN_VARIANT,
                 top_k=5,
                 generate_nl=True,
+                search_categories=set(req.search_categories) if req.search_categories else None,
             ):
                 stage = ev["stage"]
                 d = ev["data"]
@@ -330,6 +334,8 @@ async def generate_split(req: GenerateSplitRequest):
 @app.post("/api/direct_search")
 async def direct_search(req: DirectSearchRequest):
     include = set(req.categories) if req.categories else None
+    cats = "+".join(CATEGORY_LABELS.get(c, str(c)) for c in sorted(include)) if include else "전체"
+    logger.info(f'🔎 벡터DB 직접조회: [{cats}] "{req.query}" (threshold={req.threshold})')
     hits = search_mod.search_one(
         req.query, variant=req.variant, top_k=req.top_k, include_categories=include
     )
@@ -341,6 +347,7 @@ async def direct_search(req: DirectSearchRequest):
         }
         for r in hits.results if r.score >= req.threshold
     ]
+    logger.info(f"   \u2514 {len(results)}건 반환")
     return {"query": req.query, "variant": req.variant, "results": results}
 
 

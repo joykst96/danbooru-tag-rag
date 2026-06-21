@@ -64,6 +64,7 @@ async def run_decomposed_pipeline(
     en_variant: str = "b",
     top_k: int = 5,
     generate_nl: bool = True,
+    search_categories: set[int] | None = None,
 ) -> DecomposedResult:
     """4회 분해 파이프라인 실행. 중간 산출물을 전부 담아 반환."""
     res = DecomposedResult(korean_prompt=korean_prompt)
@@ -73,14 +74,14 @@ async def run_decomposed_pipeline(
     ko_attr = [u for u in res.ko_units if not looks_like_person_unit(u)]
     res.person_units = [u for u in res.ko_units if looks_like_person_unit(u)]
     if ko_attr:
-        ko_hits = search_mod.search_general(ko_attr, general_variant, top_k=top_k)
+        ko_hits = search_mod.search_pool(ko_attr, general_variant, top_k=top_k, categories=search_categories)
         res.ko_candidates = {h.keyword: [r.tag for r in h.results] for h in ko_hits}
 
     # ── 호출 2: 통번역 분해 + 질의 ──
     res.en_units = await dec.translate_decompose(korean_prompt)
     if res.en_units:
         # 인원수 영어단위(2girls 등)도 일반DB 질의(실존 태그 확정 위해)
-        en_hits = search_mod.search_general(res.en_units, en_variant, top_k=top_k)
+        en_hits = search_mod.search_pool(res.en_units, en_variant, top_k=top_k, categories=search_categories)
         res.en_candidates = {h.keyword: [r.tag for r in h.results] for h in en_hits}
 
     # ── 후보풀 합본 (A ∪ B) ──
@@ -124,6 +125,7 @@ async def stream_decomposed_pipeline(
     en_variant: str = "b",
     top_k: int = 5,
     generate_nl: bool = True,
+    search_categories: set[int] | None = None,
 ):
     """
     4회 분해 파이프라인을 단계별로 스트리밍 (async generator).
@@ -150,7 +152,7 @@ async def stream_decomposed_pipeline(
 
     ko_candidates: dict[str, list[str]] = {}
     if ko_attr:
-        ko_hits = search_mod.search_general(ko_attr, general_variant, top_k=top_k)
+        ko_hits = search_mod.search_pool(ko_attr, general_variant, top_k=top_k, categories=search_categories)
         ko_candidates = {h.keyword: [r.tag for r in h.results] for h in ko_hits}
 
     # ── 2단계: 통번역 분해 (+ 질의) ──
@@ -163,7 +165,7 @@ async def stream_decomposed_pipeline(
 
     en_candidates: dict[str, list[str]] = {}
     if en_units:
-        en_hits = search_mod.search_general(en_units, en_variant, top_k=top_k)
+        en_hits = search_mod.search_pool(en_units, en_variant, top_k=top_k, categories=search_categories)
         en_candidates = {h.keyword: [r.tag for r in h.results] for h in en_hits}
 
     # ── 후보풀 합본 ──

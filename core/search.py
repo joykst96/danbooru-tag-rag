@@ -153,6 +153,23 @@ def search_general(
     return search_many(keywords, variant, top_k=top_k, include_categories=GENERAL_CATS)
 
 
+def search_pool(
+    keywords: list[str],
+    variant: str,
+    top_k: int = DEFAULT_TOP_K,
+    categories: set[int] | None = None,
+) -> list[KeywordHits]:
+    """
+    지정 카테고리 풀에서 검색. 기본 파이프라인의 '검색 풀 설정'(고급 옵션)용.
+
+    categories=None 이면 일반(cat 0)만 검색해 기존 동작과 동일.
+    사용자가 작가/작품/캐릭터/메타를 풀에 추가하면 그 카테고리까지 검색하지만,
+    일반 외 카테고리는 속성검색을 오염시켜 출력 품질이 떨어질 수 있다(경고 대상).
+    """
+    cats = categories if categories else GENERAL_CATS
+    return search_many(keywords, variant, top_k=top_k, include_categories=cats)
+
+
 def search_copyright(
     keywords: list[str],
     variant: str,

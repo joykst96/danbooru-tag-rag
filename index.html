@@ -292,6 +292,43 @@
         background: var(--primary);
         border-color: var(--primary);
       }
+      /* 경고 모달 */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+      .modal-box {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 24px;
+        max-width: 380px;
+        width: calc(100% - 48px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+      }
+      .modal-btn {
+        padding: 8px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid var(--border);
+      }
+      .modal-cancel {
+        background: var(--bg);
+        color: var(--dim);
+      }
+      .modal-cancel:hover { color: var(--text); }
+      .modal-confirm {
+        background: var(--warn);
+        color: var(--bg);
+        border-color: var(--warn);
+      }
       .cb-label {
         display: block;
         font-size: 11px;
@@ -826,7 +863,7 @@
 
           <div class="form-group" style="margin-top: 24px;">
             <div id="mode_toggle" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" id="mode_basic_btn" class="mode-btn active" onclick="setMode('basic')">기본 (한 문장)</button>
+              <button type="button" id="mode_basic_btn" class="mode-btn active" onclick="setMode('basic')">기본</button>
               <button type="button" id="mode_split_btn" class="mode-btn" onclick="setMode('split')">고급 (인물 분할)</button>
             </div>
 
@@ -834,8 +871,27 @@
             <label for="prompt">이미지 묘사 (한국어)</label>
             <textarea
               id="prompt"
-              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)&#10;※ 짧은 한두 개 단어만 입력하면 랜덤 프롬프트 생성기처럼 활용할 수 있습니다."
+              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
             ></textarea>
+
+            <div id="search_pool_setting" style="margin-top:12px;">
+              <label class="cb-original" style="margin-bottom:0;">
+                <input type="checkbox" class="switch switch-sm" id="search_pool_toggle" onchange="onSearchPoolToggle(this)" />
+                검색 풀 설정 (고급)
+              </label>
+              <div id="search_pool_categories" style="display:none; margin-top:10px;">
+                <p style="font-size:11px; color:var(--warn); margin:0 0 8px; line-height:1.5;">
+                  ※ 일반 외 카테고리를 검색 풀에 넣으면 출력 태그 품질이 크게 떨어질 수 있습니다.
+                </p>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                  <button type="button" class="cat-toggle active" data-pool="0" onclick="togglePoolCat(this)">일반</button>
+                  <button type="button" class="cat-toggle" data-pool="1" onclick="togglePoolCat(this)">작가</button>
+                  <button type="button" class="cat-toggle" data-pool="3" onclick="togglePoolCat(this)">작품</button>
+                  <button type="button" class="cat-toggle" data-pool="4" onclick="togglePoolCat(this)">캐릭터</button>
+                  <button type="button" class="cat-toggle" data-pool="5" onclick="togglePoolCat(this)">메타</button>
+                </div>
+              </div>
+            </div>
             </div>
 
             <div id="split_input" style="display:none;">
@@ -1005,6 +1061,20 @@
       </div>
     </div>
 
+    <!-- 검색 풀 경고 모달 -->
+    <div id="pool_warn_modal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <h3 style="margin:0 0 12px; font-size:16px; color:var(--text);">검색 풀 설정</h3>
+        <p style="font-size:13px; color:var(--dim); line-height:1.6; margin:0 0 20px;">
+          일반 태그 외의 검색 풀에서 검색 시 출력 태그의 품질이 심각하게 떨어질 수 있습니다.
+        </p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" class="modal-btn modal-cancel" onclick="cancelSearchPool()">취소</button>
+          <button type="button" class="modal-btn modal-confirm" onclick="confirmSearchPool()">확인</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       let currentResultData = null;
       let lastDirectDBResults = null;
@@ -1016,6 +1086,39 @@
 
       // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
       let directClickMode = "copy";
+      // ── 검색 풀 설정(고급) ──
+      function onSearchPoolToggle(cb) {
+        if (cb.checked) {
+          // 켜려고 하면 경고 모달 먼저 — 일단 스위치는 도로 off, 확인 후 on
+          cb.checked = false;
+          document.getElementById("pool_warn_modal").style.display = "flex";
+        } else {
+          document.getElementById("search_pool_categories").style.display = "none";
+        }
+      }
+      function confirmSearchPool() {
+        document.getElementById("pool_warn_modal").style.display = "none";
+        document.getElementById("search_pool_toggle").checked = true;
+        document.getElementById("search_pool_categories").style.display = "block";
+      }
+      function cancelSearchPool() {
+        document.getElementById("pool_warn_modal").style.display = "none";
+        document.getElementById("search_pool_toggle").checked = false;
+        document.getElementById("search_pool_categories").style.display = "none";
+      }
+      function togglePoolCat(btn) {
+        btn.classList.toggle("active");
+      }
+      // 현재 검색 풀 카테고리(토글 off면 null=일반만)
+      function getSearchPoolCategories() {
+        const on = document.getElementById("search_pool_toggle")?.checked;
+        if (!on) return null;
+        const cats = Array.from(
+          document.querySelectorAll("#search_pool_categories .cat-toggle.active")
+        ).map((b) => parseInt(b.dataset.pool, 10));
+        return cats.length ? cats : null;
+      }
+
       function toggleCat(btn) {
         btn.classList.toggle("active");
       }
@@ -1246,6 +1349,7 @@
             threshold: parseFloat(document.getElementById("threshold").value),
             kw_temperature: parseFloat(document.getElementById("kw_temp").value),
             nl_temperature: parseFloat(document.getElementById("nl_temp").value),
+            search_categories: getSearchPoolCategories(),
           };
           if (!payload.prompt) {
             showError("이미지 묘사를 입력해주세요.");
@@ -1350,7 +1454,7 @@
         btnText.textContent = "조회 중...";
 
         const categories = Array.from(
-          document.querySelectorAll(".cat-toggle.active")
+          document.querySelectorAll(".cat-toggle[data-cat].active")
         ).map((b) => parseInt(b.dataset.cat, 10));
 
         try {

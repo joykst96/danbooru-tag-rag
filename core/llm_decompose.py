@@ -108,6 +108,7 @@ CRITICAL RULES:
 2. The pool mixes results from two query paths; the same intent may appear as different candidates (e.g. grey_hair vs a near-miss). Pick the one that best matches the original Korean intent.
 3. Person count: if the prompt implies multiple people, keep the count tags from the pool (2girls, 1boy, etc). Never collapse a multi-person scene to solo/1girl. Keep exactly the counts the prompt describes.
 4. Drop candidates pulled in by similarity but not actually described in the prompt.
+5. ORDER: Put person-count tags FIRST, at the very front of the array, before any other tags. These are tags like "1girl", "2girls", "1boy", "multiple_girls", "multiple_boys", "solo", "6+girls", etc. The candidates are mixed in arbitrary order, but the final output MUST lead with the count tags. Example: chosen tags ["grey_hair", "1girl", "smile"] must be output as ["1girl", "grey_hair", "smile"].
 
 Return ONLY a flat JSON array of chosen English tag strings, deduplicated. No markdown."""
 
