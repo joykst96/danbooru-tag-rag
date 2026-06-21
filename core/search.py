@@ -26,6 +26,13 @@ _db_cache: dict[str, TagDatabase] = {}
 GENERAL_CATS = {0}        # 일반 속성·인원수·행동·배경
 CHARACTER_CATS = {3, 4}   # 작품(3) + 캐릭터(4)
 
+# ── 분할입력(고급) 전용: 작품명/캐릭터명 칸을 각각 정확 카테고리로 좁혀 검색 ──
+# 일반 파이프라인은 CHARACTER_CATS{3,4}를 한 덩어리로 쓰지만, 분할입력에서는
+# 작품명 칸은 cat3, 캐릭터명 칸은 cat4 로 분리 입력되므로 각 칸을 해당
+# 카테고리로만 질의해 교차오염(작품명이 캐릭터 태그를, 그 반대를)을 줄인다.
+COPYRIGHT_CATS = {3}      # 작품/출처
+CHAR_ONLY_CATS = {4}      # 캐릭터
+
 # variant별 '실존 태그 집합' 캐시 (환각 차단 코드필터용)
 _tagset_cache: dict[str, set[str]] = {}
 
@@ -110,6 +117,15 @@ def search_many(
     if not keywords:
         return []
 
+    # 콘솔 로그: 어떤 카테고리 DB를 어떤 키워드로 조회하는지
+    if include_categories:
+        cats = "+".join(CATEGORY_LABELS.get(c, str(c)) for c in sorted(include_categories))
+    elif exclude_categories:
+        cats = "전체-" + "+".join(CATEGORY_LABELS.get(c, str(c)) for c in sorted(exclude_categories))
+    else:
+        cats = "전체"
+    logger.info(f"🔍 벡터DB 조회: [{cats}] {keywords}")
+
     query_vectors = EmbeddingManager.embed_queries(keywords)
     db = get_db(variant)
 
@@ -135,6 +151,31 @@ def search_general(
 ) -> list[KeywordHits]:
     """일반(cat 0) DB만 검색. 속성/인원수/행동/배경 단위용."""
     return search_many(keywords, variant, top_k=top_k, include_categories=GENERAL_CATS)
+
+
+def search_copyright(
+    keywords: list[str],
+    variant: str,
+    top_k: int = DEFAULT_TOP_K,
+) -> list[KeywordHits]:
+    """작품/출처(cat 3) DB만 검색. 분할입력 '작품명' 칸용. 폴백 없음."""
+    return search_many(keywords, variant, top_k=top_k, include_categories=COPYRIGHT_CATS)
+
+
+def search_character_only(
+    keywords: list[str],
+    variant: str,
+    top_k: int = DEFAULT_TOP_K,
+) -> list[KeywordHits]:
+    """
+    캐릭터(cat 4) DB만 검색. 분할입력 '캐릭터명' 칸용.
+
+    일반 파이프라인의 search_character 와 달리 **폴백을 하지 않는다.**
+    분할입력에서는 캐릭터명이 DB에 없으면(마이너/오리지널) 일반DB로 재질의하지
+    않고, 호출측에서 점수컷으로 미스 판정 → 이름 문자열만 NL에 그대로 쓴다.
+    (사용자 결정: 없는 캐릭터는 태그 검색 자체를 버리고 NL 이름 보존.)
+    """
+    return search_many(keywords, variant, top_k=top_k, include_categories=CHAR_ONLY_CATS)
 
 
 def search_character(

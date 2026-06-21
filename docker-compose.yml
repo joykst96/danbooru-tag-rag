@@ -10,10 +10,12 @@ services:
       - ./models:/app/models:ro        # e5-large 모델
       - ./danbooru-tags.csv:/app/danbooru-tags.csv:ro
       - ./.env:/app/.env:ro
+      - ./logs:/app/logs               # 생성 로그(쓰기 가능, :ro 아님). 호스트에 보존
     environment:
       - EMBEDDING_DEVICE=cpu
       - DATA_DIR=/app/data
       - MODELS_DIR=/app/models
+      - GEN_LOG_PATH=/app/logs/generations.jsonl   # 일자별 generations-YYYY-MM-DD.jsonl 로 분리 저장
       # 컨테이너에서 호스트의 llama.cpp(8080 등) 접근.
       # .env 의 LLM_API_URL 이 우선. host.docker.internal 은 호스트 게이트웨이.
     extra_hosts:

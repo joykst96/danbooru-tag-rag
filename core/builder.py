@@ -65,7 +65,8 @@ def load_and_parse() -> list[ParsedTag]:
 
             description = row[3] if len(row) > 3 else ""
 
-            # 필터: 작가(1)/메타(5) 제외
+            # 필터: EXCLUDED_CATEGORIES 에 든 카테고리만 제외(현재 정책=빈 집합=전부 인덱싱).
+            # 작가(1)/메타(5)도 살린다 — 검색 단계 where절로 거르므로 인덱스엔 둬도 무방.
             if category in EXCLUDED_CATEGORIES:
                 excluded_cat += 1
                 continue
@@ -77,7 +78,7 @@ def load_and_parse() -> list[ParsedTag]:
             parsed_tags.append(parse_row(tag, category, frequency, description))
 
     logger.info(f"파싱 완료: {len(parsed_tags)}건 유지")
-    logger.info(f"  제외 - 카테고리(작가/메타): {excluded_cat}건")
+    logger.info(f"  제외 - 카테고리({EXCLUDED_CATEGORIES or '없음'}): {excluded_cat}건")
     logger.info(f"  제외 - 저빈도(<{MIN_FREQUENCY}): {excluded_freq}건")
 
     # 타입 분포 로깅 (빌드 결과 확인용)

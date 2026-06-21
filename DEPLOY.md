@@ -16,6 +16,7 @@ danbooru-tags-rag/
 │   └── multilingual-e5-large/   # e5 모델 (download_model.py 산출물)
 ├── danbooru-tags.csv         # 태그 호버 설명용 (UI가 /danbooru-tags.csv 로 fetch)
 ├── .env                      # 아래 참고
+├── logs/                     # 생성 로그 저장 위치 (쓰기 가능, 자동 생성되나 미리 mkdir 권장)
 ├── index.html                # UI
 ├── core/ Dockerfile docker-compose.yml pyproject.toml
 ```
@@ -39,6 +40,7 @@ llama.cpp 가 4060 호스트에서 8080 등으로 떠 있어야 한다(구버전
 ## 실행
 
 ```bash
+mkdir -p logs                   # 생성 로그 디렉토리(없으면 docker가 root 소유로 자동생성됨)
 docker compose up -d --build
 docker compose logs -f          # "준비 완료" 뜨면 OK
 ```
@@ -62,13 +64,39 @@ Cloudflare Tunnel·nginx 가 구버전을 가리키면 신버전 3333 으로 라
 - 직접조회(우측)로 "은발" 검색 → grey_hair 등 일반태그 확인
 - /api/logs 로 환각제거·폴백 빈도 모니터링
 
+## 생성 로그 (파일 저장)
+
+생성이 정상 완료되면 **사용자 입력 / 최종 태그 / 최종 자연어**가 파일에 한 줄씩(JSON Lines) 남는다.
+기본 모드(`/api/generate`)·고급 분할 모드(`/api/generate_split`) 둘 다 기록된다.
+
+- 위치: `logs/generations-YYYY-MM-DD.jsonl` (일자별 분리 — 무한 증식 방지).
+  - compose 의 `./logs:/app/logs` 볼륨으로 **호스트에 보존**(컨테이너 재시작/재빌드해도 유지).
+  - 경로는 `GEN_LOG_PATH` 환경변수로 변경 가능(기본 `/app/logs/generations.jsonl`).
+- 한 줄 포맷:
+  ```json
+  {"ts":"...", "mode":"basic|split", "input":"사용자 입력",
+   "final_tags":["1girl","purple hair",...],
+   "final_tags_str":"1girl, purple hair, ...",
+   "nl_prompt":"최종 자연어", "extra":{...분할모드 원본 구조...}}
+  ```
+- **최종 태그는 언더스코어(`_`)를 공백으로 치환해서 저장**된다(`purple_hair` → `purple hair`).
+  `final_tags`(배열)·`final_tags_str`(한 줄) 둘 다 치환본. 원본 언더스코어 형태가 필요하면 별도 보존 안 하므로 주의.
+- 빠른 확인:
+  ```bash
+  tail -f logs/generations-$(date +%F).jsonl
+  # 사람이 읽기 좋게:
+  tail -n 20 logs/generations-$(date +%F).jsonl | jq -r '"\(.ts) [\(.mode)] \(.input)\n  → \(.final_tags_str)\n  → \(.nl_prompt)\n"'
+  ```
+- 주의: 단일 워커 전제(append 경합 방지). 워커 늘리지 말 것. `.gitignore` 에 `logs/` 포함되어 커밋엔 안 섞인다.
+  기록 실패는 응답을 막지 않는다(genlog 가 예외를 삼킴) — 로그가 안 남으면 디렉토리 쓰기 권한부터 확인.
+
 ## 알려진 미확정 (실데이터로 보정 예정)
 
 - 4회 구조 평탄 후보풀 vs 쌍유지 — 현재 평탄
 - 캐릭터 폴백 threshold — 현재 DEFAULT_THRESHOLD
 - 별칭매칭(bigram) 미구현 — "은발→grey_hair"가 top_k 밖이면 못 잡는 케이스 잔존
 - 인원수 슬롯보호 효과 — 다인물 실데이터로 검증 필요
-- 다음 세션: 캐릭터/작품 분할입력(고급 모드)
+- 캐릭터/작품 분할입력(고급 모드) — 구현됨. 캐릭터 히트 threshold(CHAR_HIT_THRESHOLD, 현재 0.80)는 실데이터로 보정 필요
 
 ## 주의
 
@@ -88,6 +116,7 @@ Cloudflare Tunnel·nginx 가 구버전을 가리키면 신버전 3333 으로 라
 
 ```nginx
 location /api/generate {
+    # prefix 매치라 /api/generate 와 /api/generate_split(분할입력) 둘 다 커버
     proxy_pass http://127.0.0.1:3333;
     proxy_buffering off;
     proxy_cache off;
@@ -102,6 +131,3 @@ location / {
 Cloudflare Tunnel 경유 시 Cloudflare는 ndjson 스트리밍을 대체로 통과시키지만,
 혹시 버퍼링되면 위 헤더가 도움이 된다. 스텝이 한꺼번에 뜨면 버퍼링을 의심.
 
-## 알려진 미확정 (실데이터로 보정 예정)
-
-- 4회 구조 평탄 후보풀 vs 쌍유지 — 현재 평탄

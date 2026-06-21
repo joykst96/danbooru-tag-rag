@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field
 from .embeddings import EmbeddingManager
 from . import search as search_mod
 from .pipeline_decomposed import run_decomposed_pipeline, stream_decomposed_pipeline
+from .pipeline_split import stream_split_pipeline, CharBlock
+from . import genlog
 from .config import PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K
 
 logging.basicConfig(
@@ -60,6 +62,20 @@ async def _take_ticket() -> int:
 async def _advance_serving():
     async with _gen_lock:
         _gen_state["serving"] += 1
+
+
+async def _wait_for_turn(my: int):
+    """티켓 my 차례가 올 때까지 대기번호를 실시간 yield (generate/generate_split 공유)."""
+    notified = None
+    while _gen_state["serving"] < my:
+        ahead = my - _gen_state["serving"]
+        if ahead != notified:
+            notified = ahead
+            yield json.dumps(
+                {"status": f"대기 중... 앞에 {ahead}명", "data": {}},
+                ensure_ascii=False,
+            ) + "\n"
+        await _asyncio.sleep(0.8)
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +144,19 @@ class DirectSearchRequest(BaseModel):
     categories: list[int] | None = Field(default=None)
 
 
+class CharBlockIn(BaseModel):
+    name: str = Field(default="", description="캐릭터명(옵션)")
+    series: str = Field(default="", description="작품명(옵션)")
+    desc: str = Field(default="", description="캐릭터묘사(한국어)")
+    is_original: bool = Field(default=False, description="오리지널 캐릭터(작품/캐릭터 검색 skip)")
+
+
+class GenerateSplitRequest(BaseModel):
+    characters: list[CharBlockIn] = Field(default_factory=list, description="인물칸 목록")
+    background: str = Field(default="", description="배경/공통요소(한국어)")
+    nl_temperature: float = Field(default=0.4)
+
+
 # ---------------------------------------------------------------------------
 # /api/generate — 4회 분해 → 구버전 호환 SSE
 # ---------------------------------------------------------------------------
@@ -139,18 +168,12 @@ async def generate(req: GenerateRequest):
             return
 
         my = await _take_ticket()
+        _final_tags: list[str] = []
+        _nl_prompt: str = ""
         try:
             # 내 차례(serving == my)가 올 때까지 대기번호 실시간 표시
-            notified = None
-            while _gen_state["serving"] < my:
-                ahead = my - _gen_state["serving"]
-                if ahead != notified:
-                    notified = ahead
-                    yield json.dumps(
-                        {"status": f"대기 중... 앞에 {ahead}명", "data": {}},
-                        ensure_ascii=False,
-                    ) + "\n"
-                await _asyncio.sleep(0.8)
+            async for w in _wait_for_turn(my):
+                yield w
 
             # 내 차례 — 4스텝 스트리밍
             async for ev in stream_decomposed_pipeline(
@@ -171,14 +194,127 @@ async def generate(req: GenerateRequest):
                 elif stage == "final":
                     out["final_prompt"] = ", ".join(d["final_tags"])
                     out["suspicious_tags"] = d["hallucinated"]
+                    _final_tags = d["final_tags"]          # 원본(언더스코어 포함) — genlog가 치환
                 elif stage == "nl":
                     out["english_prompt"] = d["nl_prompt"]
+                    _nl_prompt = d["nl_prompt"]
 
                 yield json.dumps(
                     {"status": ev["status"], "data": out}, ensure_ascii=False
                 ) + "\n"
+
+            # 정상 완료 시에만 파일 로그 기록 (입력/최종태그/자연어)
+            genlog.log_generation(
+                user_input=req.prompt.strip(),
+                final_tags=_final_tags,
+                nl_prompt=_nl_prompt,
+                mode="basic",
+            )
+            genlog.console_log_generation(
+                user_input=req.prompt.strip(),
+                final_tags=_final_tags,
+                nl_prompt=_nl_prompt,
+                mode="basic",
+            )
         finally:
             # 성공/실패/연결끊김 무엇이든 다음 사람에게 차례를 넘겨야 큐가 안 막힘
+            await _advance_serving()
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/x-ndjson",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.post("/api/generate_split")
+async def generate_split(req: GenerateSplitRequest):
+    """분할입력(고급) — 인물칸 N + 배경칸 1. 큐는 /api/generate 와 공유."""
+    async def stream():
+        blocks = [
+            CharBlock(name=c.name, series=c.series, desc=c.desc, is_original=c.is_original)
+            for c in req.characters
+        ]
+        has_char = any(
+            b.name.strip() or b.series.strip() or b.desc.strip() for b in blocks
+        )
+        if not has_char and not req.background.strip():
+            yield json.dumps({"status": "오류", "data": {}}, ensure_ascii=False) + "\n"
+            return
+
+        my = await _take_ticket()
+        _final_tags: list[str] = []
+        _nl_prompt: str = ""
+        try:
+            async for w in _wait_for_turn(my):
+                yield w
+
+            async for ev in stream_split_pipeline(
+                blocks,
+                background_desc=req.background,
+                variant=MAIN_VARIANT,
+                top_k=5,
+                generate_nl=True,
+            ):
+                stage = ev["stage"]
+                d = ev["data"]
+                out: dict = {}
+                if stage == "character":
+                    out["character"] = d
+                elif stage == "background":
+                    out["background_tags"] = d["background_tags"]
+                elif stage == "final":
+                    out["final_prompt"] = ", ".join(d["final_tags"])
+                    _final_tags = d["final_tags"]          # 원본(언더스코어 포함) — genlog가 치환
+                elif stage == "nl":
+                    out["english_prompt"] = d["nl_prompt"]
+                    _nl_prompt = d["nl_prompt"]
+
+                yield json.dumps(
+                    {"status": ev["status"], "data": out}, ensure_ascii=False
+                ) + "\n"
+
+            # 정상 완료 시에만 파일 로그 기록. 분할입력은 사람이 읽기 좋은 요약으로.
+            char_lines = []
+            for c in req.characters:
+                parts = []
+                if c.is_original:
+                    parts.append("[오리지널]")
+                else:
+                    if c.series.strip():
+                        parts.append(f"[{c.series.strip()}]")
+                    if c.name.strip():
+                        parts.append(c.name.strip())
+                if c.desc.strip():
+                    parts.append(f"- {c.desc.strip()}")
+                if parts:
+                    char_lines.append(" ".join(parts))
+            input_summary = " / ".join(char_lines)
+            if req.background.strip():
+                input_summary += f" / 배경: {req.background.strip()}"
+            genlog.log_generation(
+                user_input=input_summary,
+                final_tags=_final_tags,
+                nl_prompt=_nl_prompt,
+                mode="split",
+                extra={
+                    "characters": [
+                        {"name": c.name, "series": c.series, "desc": c.desc}
+                        for c in req.characters
+                    ],
+                    "background": req.background,
+                },
+            )
+            genlog.console_log_generation(
+                user_input=input_summary,
+                final_tags=_final_tags,
+                nl_prompt=_nl_prompt,
+                mode="split",
+            )
+        finally:
             await _advance_serving()
 
     return StreamingResponse(

@@ -30,6 +30,10 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", PROJECT_ROOT / "data"))
 # 모델 로컬 저장 경로 (download_model.py 가 여기에 받아둔다)
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", PROJECT_ROOT / "models"))
 
+# 생성 결과 로그 디렉토리 (사용자입력/최종태그/자연어 기록). Docker에서 rw 볼륨 마운트.
+# 실제 파일 경로는 genlog 가 환경변수 GEN_LOG_PATH 로 직접 결정한다(여기 상수는 참고용).
+LOG_DIR = Path(os.environ.get("LOG_DIR", PROJECT_ROOT / "logs"))
+
 # ---------------------------------------------------------------------------
 # 임베딩 모델 설정
 # ---------------------------------------------------------------------------
@@ -66,12 +70,13 @@ EMBED_BATCH_SIZE = 256
 # 필터 정책 (스캔 데이터 분석으로 확정됨)
 # ---------------------------------------------------------------------------
 # category 의미: 0=일반, 1=아티스트, 3=작품/출처, 4=캐릭터, 5=메타
-# 분석 결과:
-#   - category 1 (아티스트): 전체의 20%(22,679개), 저빈도 노이즈 주범 → 제외
-#   - category 5 (메타): highres/commentary 등 이미지 내용 무관 → 제외
-#   - category 0 (일반): 메인 속성 태그 → 유지
-#   - category 3 (작품) / 4 (캐릭터): 유지하되 검색 시 라벨 분리
-EXCLUDED_CATEGORIES = {1, 5}
+# 정책 변경(2분할 도입 이후): 카테고리는 빌드에서 드롭하지 않고 전부 인덱싱한다.
+#   - 임베딩 벡터는 태그별 독립 계산 → 다른 카테고리가 섞여도 벡터값에 상호영향 없음.
+#   - 프롬프트 파이프라인은 search 단계 where절(GENERAL_CATS{0}/CHARACTER_CATS{3,4})로
+#     필요한 카테고리만 조회하므로, 작가(1)/메타(5)가 인덱스에 있어도 결과에 안 섞인다.
+#   - cat1/cat5 는 직접조회(/api/direct_search)에서 사용자가 명시 선택할 때만 노출.
+# (과거 cat1=저빈도 노이즈, cat5=내용무관 사유로 드롭했으나, where절 필터로 충분해 살림.)
+EXCLUDED_CATEGORIES: set[int] = set()   # 빈 집합 = 전 카테고리 인덱싱
 
 # 카테고리 한글 라벨 (검색 결과 분류/표시용)
 CATEGORY_LABELS = {
