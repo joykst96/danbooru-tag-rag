@@ -410,13 +410,25 @@ async def health():
 # ---------------------------------------------------------------------------
 @app.get("/")
 async def index():
-    return FileResponse(PROJECT_ROOT / "index.html")
+    # index.html 은 절대 캐시하지 않는다(인라인 JS/CSS 포함 단일 파일).
+    # 업데이트 시 클라이언트가 강제 새로고침 없이 바로 최신 UI 를 받게 한다.
+    return FileResponse(
+        PROJECT_ROOT / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/danbooru-tags.csv")
 async def tags_csv():
     if TAGS_CSV_PATH.exists():
-        return FileResponse(TAGS_CSV_PATH, media_type="text/csv")
+        # CSV(태그 호버 설명)는 큰 파일이라 캐시하되, 인덱스 갱신 시 바뀔 수 있으므로
+        # ETag 재검증을 강제한다. FileResponse 가 ETag/Last-Modified 를 자동 부여하므로
+        # no-cache(=캐시하되 매번 변경 확인)로 묵은 파일 방지 + 미변경 시 304 로 대역폭 절약.
+        return FileResponse(
+            TAGS_CSV_PATH,
+            media_type="text/csv",
+            headers={"Cache-Control": "no-cache"},
+        )
     return JSONResponse({"error": "csv not found"}, status_code=404)
 
 
