@@ -39,7 +39,7 @@ A "search unit" is one visual attribute that maps to roughly one tag: a hair col
 RULES:
 1. Keep each unit in its ORIGINAL language. Do NOT translate Korean to English. If the input already contains an English phrase (code-switching), keep that English phrase as its own unit, unchanged.
 2. Split compound descriptions into separate units, BUT keep a phrase together if splitting would lose its meaning. Example: "머리 양쪽 드래곤 뿔" stays as one unit (splitting "양쪽" off makes it meaningless).
-3. Person count and relations are ALWAYS their own units. "여자 둘이 남자 하나를 둘러싼" → ["여자 둘", "남자 하나", "둘러싼". Never merge counts into other attributes.
+3. Person count and relations are ALWAYS their own units. "여자 둘이 남자 하나를 둘러싼" → ["여자 둘", "남자 하나", "둘러싼"]. Never merge counts into other attributes.
 4. Drop pure filler that carries no visual meaning (e.g. "~하는 장면", "~인 모습", connective particles alone). Keep anything that affects the image.
 5. Preserve named characters or series as single units, as written.
 

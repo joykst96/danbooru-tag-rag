@@ -292,42 +292,57 @@
         background: var(--primary);
         border-color: var(--primary);
       }
-      /* 경고 모달 */
-      .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.6);
+      /* 자연어 톤 프리셋 버튼 (cat-toggle 스타일 준용) */
+      .tone-group {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
       }
-      .modal-box {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 24px;
-        max-width: 380px;
-        width: calc(100% - 48px);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-      }
-      .modal-btn {
-        padding: 8px 18px;
-        font-size: 13px;
+      .tone-btn {
+        padding: 6px 14px;
+        font-size: 12px;
         font-weight: 600;
-        border-radius: 8px;
-        cursor: pointer;
-        border: 1px solid var(--border);
-      }
-      .modal-cancel {
-        background: var(--bg);
         color: var(--dim);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        cursor: pointer;
+        transition: all 0.15s;
+        user-select: none;
       }
-      .modal-cancel:hover { color: var(--text); }
-      .modal-confirm {
-        background: var(--warn);
+      .tone-btn:hover { color: var(--text); border-color: var(--dim); }
+      .tone-btn.active {
         color: var(--bg);
-        border-color: var(--warn);
+        background: var(--primary);
+        border-color: var(--primary);
+      }
+      /* 인물칸 출처 3택 세그먼트 */
+      .source-seg {
+        display: flex;
+        gap: 4px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 3px;
+      }
+      .src-btn {
+        flex: 1;
+        padding: 6px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--dim);
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        user-select: none;
+      }
+      .src-btn:hover { color: var(--text); }
+      .src-btn.active {
+        color: var(--bg);
+        background: var(--primary);
       }
       .cb-label {
         display: block;
@@ -395,6 +410,14 @@
         cursor: default;
       }
       .tag.fixed-badge:hover { background: hsla(45, 90%, 55%, 0.14); }
+      /* 패스스루(신규 캐릭터) — 청록 175°. 고정(금 45°)/작품(보라 280°)과 구분. */
+      .tag.passthrough-badge {
+        background: hsla(175, 70%, 45%, 0.14);
+        color: hsl(175, 70%, 60%);
+        border: 1px solid hsla(175, 70%, 45%, 0.45);
+        cursor: default;
+      }
+      .tag.passthrough-badge:hover { background: hsla(175, 70%, 45%, 0.14); }
       .artist-row {
         display: flex;
         align-items: center;
@@ -584,6 +607,34 @@
         border-color: #ff6b6b;
         text-decoration: line-through;
       }
+      /* 가중치가 1.0이 아닌 DB 태그 강조(휠로 조절됨) */
+      .tag.db-tag.weighted {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+        font-weight: 600;
+      }
+      /* 가중치 조절 중에도 삭제 hover와 구분되도록, weighted hover는 line-through 유지 */
+      /* Danbooru 태그 직접 편집 textarea */
+      .final-edit {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 12px;
+        padding: 10px 12px;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        resize: vertical;
+        transition: border-color 0.15s;
+      }
+      .final-edit:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .final-edit::placeholder { color: var(--dim); }
       /* 인물 그리드 (분할 모드) */
       .char-grid {
         display: grid;
@@ -618,6 +669,17 @@
         border-radius: 4px;
         padding: 0 4px;
         vertical-align: middle;
+      }
+      .char-card .cc-pass {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        color: hsl(175, 70%, 60%);
+        border: 1px solid hsla(175, 70%, 45%, 0.6);
+        border-radius: 4px;
+        padding: 0 4px;
+        vertical-align: middle;
+        margin-left: 4px;
       }
       .char-card .cc-tags {
         display: flex;
@@ -764,6 +826,7 @@
           <span class="tag tag-cat-3" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작품태그</span>
           <span class="tag tag-cat-4" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">캐릭터</span>
           <span class="tag fixed-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">고정태그</span>
+          <span class="tag passthrough-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">패스스루</span>
           <span class="tag tag-cat-5" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">메타태그</span>
         </div>
       </div>
@@ -775,62 +838,86 @@
           <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 16px; line-height: 1.4;">
             한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.
           </p>
-          <details class="advanced-settings">
-            <summary>고급 설정 (유사도 및 온도 조절)</summary>
-            <div class="settings-content">
-              <div class="form-group">
-                <label for="threshold">검색 유사도 기준 (Threshold)</label>
-                <div class="slider-group">
-                  <input
-                    type="range"
-                    id="threshold"
-                    min="0.5"
-                    max="1.0"
-                    step="0.01"
-                    value="0.80"
-                  />
-                  <span class="val-display" id="threshold_val">0.80</span>
-                </div>
-              </div>
+          <div class="form-group" style="margin-top: 8px;">
+            <!-- 1. 모드 토글: 기본 / 고급(인물 분할) -->
+            <div id="mode_toggle" style="display:flex; gap:8px; margin-bottom:16px;">
+              <button type="button" id="mode_basic_btn" class="mode-btn active" onclick="setMode('basic')">기본</button>
+              <button type="button" id="mode_split_btn" class="mode-btn" onclick="setMode('split')">고급 (인물 분할)</button>
+            </div>
 
+            <!-- 2. 입력칸 (최상단) -->
+            <div id="basic_input">
+              <label for="prompt">이미지 묘사 (한국어)</label>
+              <textarea
+                id="prompt"
+                placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
+              ></textarea>
+            </div>
 
+            <div id="split_input" style="display:none;">
+              <p style="font-size:12px; color:var(--dim); margin:0 0 14px; line-height:1.7;">
+                인물마다 칸을 나눠 입력합니다.<br />
+                다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
+                <span style="opacity:0.8;">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
+              </p>
+              <div id="char_blocks"></div>
+              <button type="button" class="add-char-btn" onclick="addCharBlock()">+ 인물 추가</button>
 
-              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
-              
-              <div style="margin-bottom: -4px;">
-                <h4 style="margin: 0 0 4px 0; font-size: 13px; color: var(--text);">온도 (Temperature) 설정</h4>
-                <p style="font-size: 11px; color: var(--dim); margin: 0; line-height: 1.4;">
-                  낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
-                  (너무 높으면 미친 소리를 하기 시작합니다.)
-                </p>
-              </div>
-
-              <div class="form-group">
-                <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
-                <div class="slider-group">
-                  <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
-                  <span class="val-display" id="kw_temp_val">0.1</span>
-                </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
-                  <span style="color: #ff6b6b;"><b>※ 전처리기는 0.1을 강력히 추천합니다.</b></span><br/>
-                  온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
-                </p>
-              </div>
-
-              <div class="form-group">
-                <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
-                <div class="slider-group">
-                  <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
-                  <span class="val-display" id="nl_temp_val">0.4</span>
-                </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
-                  자연어 프롬프트를 얼마나 창의적이고 다채롭게 묘사할지 결정합니다.<br/>
-                  낮추면 딱딱해지고 높이면 풍부해지지만, 과하면 묘사가 엇나갈 수 있습니다.
-                </p>
+              <div class="char-block" style="margin-top:16px; border-color:var(--accent);">
+                <label class="cb-label">배경 / 공통 요소 (한국어)</label>
+                <textarea id="bg_desc" class="cb-textarea" rows="2"
+                  placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
               </div>
             </div>
-          </details>
 
+            <!-- 3. 자연어 톤 (전면 노출) -->
+            <label style="margin-top: 20px; display:block;">자연어 톤</label>
+            <div class="tone-group" id="nl_tone_group">
+              <button type="button" class="tone-btn active" data-tone="rich" data-temp="0.4" onclick="setNlTone('rich')">묘사적</button>
+              <button type="button" class="tone-btn" data-tone="plain" data-temp="0.3" onclick="setNlTone('plain')">담백</button>
+            </div>
+
+            <!-- 4. 태그 검색 범위 (기본 모드 전용 — 고급 모드는 4-step 본선/cat3·4 검색 사용) -->
+            <div id="search_range_section">
+              <label style="margin-top: 20px; display:block;">태그 검색 범위</label>
+              <div id="search_pool_categories" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+                <button type="button" class="cat-toggle active" data-pool="0" onclick="togglePoolCat(this)">일반</button>
+                <button type="button" class="cat-toggle" data-pool="1" onclick="togglePoolCat(this)">작가</button>
+                <button type="button" class="cat-toggle" data-pool="3" onclick="togglePoolCat(this)">작품</button>
+                <button type="button" class="cat-toggle" data-pool="4" onclick="togglePoolCat(this)">캐릭터</button>
+                <button type="button" class="cat-toggle" data-pool="5" onclick="togglePoolCat(this)">메타</button>
+              </div>
+              <p style="font-size: 11px; color: var(--warn); margin-top: 4px; line-height: 1.4;">
+                ※ 어느 종류의 태그를 검색할지 고릅니다. 일반 외 카테고리를 넣으면 출력 태그 품질이 떨어질 수 있습니다.
+              </p>
+            </div>
+
+            <!-- 5. 출력 형식 옵션 -->
+            <div class="checkbox-container" style="margin-top:16px;">
+              <input
+                type="checkbox"
+                class="switch"
+                id="replace_underscores"
+                onchange="updatePromptDisplay()"
+              />
+              <label for="replace_underscores"
+                >언더스코어(_)를 공백으로 치환</label
+              >
+            </div>
+            <div class="checkbox-container">
+              <input
+                type="checkbox"
+                class="switch"
+                id="escape_parentheses"
+                onchange="updatePromptDisplay()"
+              />
+              <label for="escape_parentheses"
+                >소괄호 '()' 이스케이프 '\(\)' 처리</label
+              >
+            </div>
+          </div>
+
+          <!-- 6. 접이식 설정: 고정 태그 + 온도 미세조정 (입력 아래) -->
           <details class="advanced-settings">
             <summary>고정 태그 (Danbooru 태그 앞뒤 고정)</summary>
             <div class="settings-content">
@@ -861,79 +948,53 @@
             </div>
           </details>
 
-          <div class="form-group" style="margin-top: 24px;">
-            <div id="mode_toggle" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" id="mode_basic_btn" class="mode-btn active" onclick="setMode('basic')">기본</button>
-              <button type="button" id="mode_split_btn" class="mode-btn" onclick="setMode('split')">고급 (인물 분할)</button>
-            </div>
-
-            <div id="basic_input">
-            <label for="prompt">이미지 묘사 (한국어)</label>
-            <textarea
-              id="prompt"
-              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
-            ></textarea>
-
-            <div id="search_pool_setting" style="margin-top:12px;">
-              <label class="cb-original" style="margin-bottom:0;">
-                <input type="checkbox" class="switch switch-sm" id="search_pool_toggle" onchange="onSearchPoolToggle(this)" />
-                검색 풀 설정 (고급)
-              </label>
-              <div id="search_pool_categories" style="display:none; margin-top:10px;">
-                <p style="font-size:11px; color:var(--warn); margin:0 0 8px; line-height:1.5;">
-                  ※ 일반 외 카테고리를 검색 풀에 넣으면 출력 태그 품질이 크게 떨어질 수 있습니다.
-                </p>
-                <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                  <button type="button" class="cat-toggle active" data-pool="0" onclick="togglePoolCat(this)">일반</button>
-                  <button type="button" class="cat-toggle" data-pool="1" onclick="togglePoolCat(this)">작가</button>
-                  <button type="button" class="cat-toggle" data-pool="3" onclick="togglePoolCat(this)">작품</button>
-                  <button type="button" class="cat-toggle" data-pool="4" onclick="togglePoolCat(this)">캐릭터</button>
-                  <button type="button" class="cat-toggle" data-pool="5" onclick="togglePoolCat(this)">메타</button>
+          <details class="advanced-settings">
+            <summary>온도 미세조정 (고급)</summary>
+            <div class="settings-content">
+              <div class="form-group">
+                <label for="threshold">검색 유사도 기준 (Threshold)</label>
+                <div class="slider-group">
+                  <input type="range" id="threshold" min="0.5" max="1.0" step="0.01" value="0.80" />
+                  <span class="val-display" id="threshold_val">0.80</span>
                 </div>
               </div>
-            </div>
-            </div>
 
-            <div id="split_input" style="display:none;">
-              <p style="font-size:12px; color:var(--dim); margin:0 0 14px; line-height:1.7;">
-                인물마다 칸을 나눠 입력합니다.<br />
-                다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
-                <span style="opacity:0.8;">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
-              </p>
-              <div id="char_blocks"></div>
-              <button type="button" class="add-char-btn" onclick="addCharBlock()">+ 인물 추가</button>
+              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
 
-              <div class="char-block" style="margin-top:16px; border-color:var(--accent);">
-                <label class="cb-label">배경 / 공통 요소 (한국어)</label>
-                <textarea id="bg_desc" class="cb-textarea" rows="2"
-                  placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
+              <div style="margin-bottom: -4px;">
+                <h4 style="margin: 0 0 4px 0; font-size: 13px; color: var(--text);">온도 (Temperature) 설정</h4>
+                <p style="font-size: 11px; color: var(--dim); margin: 0; line-height: 1.4;">
+                  낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
+                  (너무 높으면 미친 소리를 하기 시작합니다.)
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
+                <div class="slider-group">
+                  <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
+                  <span class="val-display" id="kw_temp_val">0.1</span>
+                </div>
+                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                  <span style="color: #ff6b6b;"><b>※ 전처리기는 0.1을 강력히 추천합니다.</b></span><br/>
+                  온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
+                <div class="slider-group">
+                  <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
+                  <span class="val-display" id="nl_temp_val">0.4</span>
+                </div>
+                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                  자연어 프롬프트를 얼마나 창의적이고 다채롭게 묘사할지 결정합니다.<br/>
+                  낮추면 딱딱해지고 높이면 풍부해지지만, 과하면 묘사가 엇나갈 수 있습니다.<br/>
+                  <span style="opacity:0.8;">위에서 톤을 고르면 이 값이 권장값으로 맞춰집니다.</span>
+                </p>
               </div>
             </div>
-
-
-            <div class="checkbox-container">
-              <input
-                type="checkbox"
-                class="switch"
-                id="replace_underscores"
-                onchange="updatePromptDisplay()"
-              />
-              <label for="replace_underscores"
-                >언더스코어(_)를 공백으로 치환</label
-              >
-            </div>
-            <div class="checkbox-container">
-              <input
-                type="checkbox"
-                class="switch"
-                id="escape_parentheses"
-                onchange="updatePromptDisplay()"
-              />
-              <label for="escape_parentheses"
-                >소괄호 '()' 이스케이프 '\(\)' 처리</label
-              >
-            </div>
-          </div>
+          </details>
 
           <button
             class="btn-generate"
@@ -1025,6 +1086,14 @@
               >
                 복사하기
               </button>
+              <textarea
+                id="final_prompt_edit"
+                class="final-edit"
+                rows="3"
+                placeholder="Danbooru 태그 (쉼표로 구분). 직접 수정하면 아래 뱃지에 반영됩니다. (고정태그 제외)"
+                oninput="onFinalEditInput()"
+                onblur="onFinalEditBlur()"
+              ></textarea>
               <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
             </div>
 
@@ -1061,20 +1130,6 @@
       </div>
     </div>
 
-    <!-- 검색 풀 경고 모달 -->
-    <div id="pool_warn_modal" class="modal-overlay" style="display:none;">
-      <div class="modal-box">
-        <h3 style="margin:0 0 12px; font-size:16px; color:var(--text);">검색 풀 설정</h3>
-        <p style="font-size:13px; color:var(--dim); line-height:1.6; margin:0 0 20px;">
-          일반 태그 외의 검색 풀에서 검색 시 출력 태그의 품질이 심각하게 떨어질 수 있습니다.
-        </p>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
-          <button type="button" class="modal-btn modal-cancel" onclick="cancelSearchPool()">취소</button>
-          <button type="button" class="modal-btn modal-confirm" onclick="confirmSearchPool()">확인</button>
-        </div>
-      </div>
-    </div>
-
     <script>
       let currentResultData = null;
       let lastDirectDBResults = null;
@@ -1082,37 +1137,18 @@
 
       // ── 입력 모드 (기본 한문장 / 고급 인물분할) ──
       let currentMode = "basic";
+      let currentNlTone = "rich";   // 자연어 톤 프리셋 (rich/plain)
       let charBlockSeq = 0;
 
       // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
       let directClickMode = "copy";
-      // ── 검색 풀 설정(고급) ──
-      function onSearchPoolToggle(cb) {
-        if (cb.checked) {
-          // 켜려고 하면 경고 모달 먼저 — 일단 스위치는 도로 off, 확인 후 on
-          cb.checked = false;
-          document.getElementById("pool_warn_modal").style.display = "flex";
-        } else {
-          document.getElementById("search_pool_categories").style.display = "none";
-        }
-      }
-      function confirmSearchPool() {
-        document.getElementById("pool_warn_modal").style.display = "none";
-        document.getElementById("search_pool_toggle").checked = true;
-        document.getElementById("search_pool_categories").style.display = "block";
-      }
-      function cancelSearchPool() {
-        document.getElementById("pool_warn_modal").style.display = "none";
-        document.getElementById("search_pool_toggle").checked = false;
-        document.getElementById("search_pool_categories").style.display = "none";
-      }
+      // ── 태그 검색 범위 (카테고리 다중선택, 전면 노출) ──
       function togglePoolCat(btn) {
         btn.classList.toggle("active");
       }
-      // 현재 검색 풀 카테고리(토글 off면 null=일반만)
+      // 현재 선택된 검색 범위 카테고리. 활성 버튼 수집.
+      // 아무것도 안 켜져 있으면 null(=백엔드에서 일반 cat0 폴백).
       function getSearchPoolCategories() {
-        const on = document.getElementById("search_pool_toggle")?.checked;
-        if (!on) return null;
         const cats = Array.from(
           document.querySelectorAll("#search_pool_categories .cat-toggle.active")
         ).map((b) => parseInt(b.dataset.pool, 10));
@@ -1137,6 +1173,24 @@
         ));
       }
 
+      // 자연어 톤 프리셋 선택. 톤을 고르면 nl_temp 슬라이더를 그 톤의 권장온도로
+      // 점프시킨다(프리셋 동작). 이후 사용자가 슬라이더로 미세조정 가능.
+      function setNlTone(tone) {
+        currentNlTone = tone;
+        document.querySelectorAll("#nl_tone_group .tone-btn").forEach((b) => {
+          const on = b.dataset.tone === tone;
+          b.classList.toggle("active", on);
+          if (on) {
+            // 권장온도로 슬라이더/표시값 동기화
+            const t = b.dataset.temp;
+            const slider = document.getElementById("nl_temp");
+            const valEl = document.getElementById("nl_temp_val");
+            if (slider) slider.value = t;
+            if (valEl) valEl.textContent = t;
+          }
+        });
+      }
+
       function setMode(mode) {
         currentMode = mode;
         const isSplit = mode === "split";
@@ -1144,6 +1198,9 @@
         document.getElementById("split_input").style.display = isSplit ? "block" : "none";
         document.getElementById("mode_basic_btn").classList.toggle("active", !isSplit);
         document.getElementById("mode_split_btn").classList.toggle("active", isSplit);
+        // 검색 범위는 기본 모드 전용(고급 모드는 백엔드가 4-step 본선/cat3·4 검색 사용).
+        const srs = document.getElementById("search_range_section");
+        if (srs) srs.style.display = isSplit ? "none" : "block";
         // 고급 모드 첫 진입 시 인물칸 1개 자동 생성
         if (isSplit && document.querySelectorAll("#char_blocks .char-block").length === 0) {
           addCharBlock();
@@ -1158,10 +1215,13 @@
         div.dataset.idx = n;
         div.innerHTML = `
           <button type="button" class="cb-remove" title="삭제" onclick="removeCharBlock(${n})">×</button>
-          <label class="cb-original">
-            <input type="checkbox" class="switch cb-is-original" onchange="toggleOriginal(this)" />
-            오리지널 캐릭터 · 이름 자동 생성
-          </label>
+          <label class="cb-label">캐릭터 출처</label>
+          <div class="source-seg" data-source="db">
+            <button type="button" class="src-btn active" data-src="db" onclick="setCharSource(this,'db')">DB에서 찾기</button>
+            <button type="button" class="src-btn" data-src="passthrough" onclick="setCharSource(this,'passthrough')">DB에 없는 캐릭터</button>
+            <button type="button" class="src-btn" data-src="original" onclick="setCharSource(this,'original')">오리지널</button>
+          </div>
+          <p class="src-hint" style="font-size:11px; color:var(--dim); margin:6px 0 12px; line-height:1.5;">DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.</p>
           <div class="cb-row">
             <div class="cb-field">
               <label class="cb-label">작품명 (옵션)</label>
@@ -1178,16 +1238,34 @@
         document.getElementById("char_blocks").appendChild(div);
       }
 
-      function toggleOriginal(cb) {
-        const block = cb.closest(".char-block");
+      // 캐릭터 출처 3택: db(기본) / passthrough(신규) / original(오리지널).
+      // 기존 is_original/is_passthrough 불리언을 이 단일 상태에서 payload 수집 시 파생한다.
+      const _SRC_HINT = {
+        db: "DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.",
+        passthrough: "DB에 없는 신규 캐릭터입니다. 입력한 이름을 그대로 자연어와 태그 맨 앞에 사용합니다.",
+        original: "오리지널 캐릭터입니다. 작품/캐릭터명 없이 묘사만 쓰며, 이름은 자동 생성됩니다.",
+      };
+      function setCharSource(btn, src) {
+        const block = btn.closest(".char-block");
+        const seg = block.querySelector(".source-seg");
+        seg.dataset.source = src;
+        seg.querySelectorAll(".src-btn").forEach((b) => {
+          b.classList.toggle("active", b.dataset.src === src);
+        });
+        const hint = block.querySelector(".src-hint");
+        if (hint) hint.textContent = _SRC_HINT[src] || "";
         const series = block.querySelector(".cb-series");
         const name = block.querySelector(".cb-name");
-        const on = cb.checked;
+        // 오리지널: 작품/캐릭터명 비활성+비움(이름 자동 생성). db/passthrough: 입력 살림.
+        const lock = src === "original";
         [series, name].forEach((el) => {
-          el.disabled = on;
-          if (on) el.value = "";
-          el.style.opacity = on ? "0.4" : "1";
+          el.disabled = lock;
+          if (lock) el.value = "";
+          el.style.opacity = lock ? "0.4" : "1";
         });
+        // passthrough 는 시각적으로 점선 표시(DB 미경유 신규).
+        block.style.outline = src === "passthrough" ? "1px dashed var(--accent)" : "";
+        block.style.outlineOffset = src === "passthrough" ? "2px" : "";
       }
 
       function removeCharBlock(n) {
@@ -1311,6 +1389,9 @@
         btnText.textContent = "생성 준비 중...";
         
         currentResultData = {};
+        // 새 생성 시작: 편집 textarea 비움(이전 결과 잔류 방지)
+        const _fpEdit = document.getElementById("final_prompt_edit");
+        if (_fpEdit) _fpEdit.value = "";
 
         const splitUnmatchedNames = [];
         const _note = document.getElementById("unmatched_note");
@@ -1323,12 +1404,17 @@
           apiUrl = "/api/generate_split";
           const characters = [];
           document.querySelectorAll("#char_blocks .char-block").forEach((blk) => {
-            const isOriginal = blk.querySelector(".cb-is-original").checked;
+            // 출처 3택 세그먼트 상태에서 is_original/is_passthrough 를 파생.
+            const seg = blk.querySelector(".source-seg");
+            const src = seg ? seg.dataset.source : "db";
+            const isOriginal = src === "original";
+            const isPassthrough = src === "passthrough";
+            // 오리지널은 이름/작품을 비우지만, db/passthrough 는 살려둔다(이름을 NL 핸들로 사용).
             const name = isOriginal ? "" : blk.querySelector(".cb-name").value.trim();
             const series = isOriginal ? "" : blk.querySelector(".cb-series").value.trim();
             const desc = blk.querySelector(".cb-desc").value.trim();
             if (name || series || desc) {
-              characters.push({ name, series, desc, is_original: isOriginal });
+              characters.push({ name, series, desc, is_original: isOriginal, is_passthrough: isPassthrough });
             }
           });
           const background = document.getElementById("bg_desc").value.trim();
@@ -1341,6 +1427,7 @@
             characters,
             background,
             nl_temperature: parseFloat(document.getElementById("nl_temp").value),
+            nl_tone: currentNlTone,
           };
         } else {
           apiUrl = "/api/generate";
@@ -1349,6 +1436,7 @@
             threshold: parseFloat(document.getElementById("threshold").value),
             kw_temperature: parseFloat(document.getElementById("kw_temp").value),
             nl_temperature: parseFloat(document.getElementById("nl_temp").value),
+            nl_tone: currentNlTone,
             search_categories: getSearchPoolCategories(),
           };
           if (!payload.prompt) {
@@ -1616,38 +1704,63 @@
           // 맨 앞: 퀄리티 고정 태그
           parseFixedQuality().forEach(addFixedBadge);
 
+          // 퀄리티 뒤, DB 태그 앞: 패스스루(신규 캐릭터) 이름 배지.
+          // DB를 못 뚫는 신규 캐릭터라 RAG 태그로는 안 나가므로 프론트에서 직접 끼운다.
+          const addPassthroughBadge = (txt) => {
+            const b = document.createElement("span");
+            b.className = "tag passthrough-badge";
+            let t = txt;
+            if (replaceUnderscores) t = t.replace(/_/g, " ");
+            if (escapeParentheses) t = t.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+            b.textContent = t;
+            b.setAttribute("data-tooltip", "패스스루 (신규 캐릭터 — DB 미경유, 사용자 입력 이름)");
+            finalContainer.appendChild(b);
+          };
+          parsePassthroughNames().forEach(addPassthroughBadge);
+
           let tagsArray = data.final_prompt.split(", ").filter(t => t.trim() !== "");
 
-          tagsArray.forEach((tag) => {
+          tagsArray.forEach((token, idx) => {
             const el = document.createElement("span");
-            el.className = "tag deletable";
-            let tooltip = "클릭하여 삭제";
-            const cleanTag = tag.trim();
-            let hasDesc = false;
-            let descText = "";
+            el.className = "tag deletable db-tag";
+            // 토큰은 "tag" 또는 "(tag:1.2)". 가중치를 분리해 코어 태그로 설명/색상 매칭.
+            const { tag: coreTag, weight } = parseTagWeight(token);
+            let tooltip = "휠로 가중치 조절 · 클릭하여 삭제";
+            const cleanTag = coreTag.trim();
 
             if (tagInfo.has(cleanTag)) {
               const info = tagInfo.get(cleanTag);
-              descText = info.desc;
-              hasDesc = true;
-              tooltip = (descText ? descText : "설명 없음") + "\n\n(클릭하여 삭제)";
+              const descText = info.desc;
+              tooltip = (descText ? descText : "설명 없음") + "\n\n(휠: 가중치 ±0.1 · 클릭: 삭제)";
               el.classList.add("tag-cat-" + info.category);
             } else {
-              tooltip = "설명을 찾을 수 없습니다.\n\n(클릭하여 삭제)";
+              tooltip = "설명을 찾을 수 없습니다.\n\n(휠: 가중치 ±0.1 · 클릭: 삭제)";
             }
             el.setAttribute("data-tooltip", tooltip);
-            
-            let tagText = tag;
-            if (replaceUnderscores) tagText = tagText.replace(/_/g, " ");
-            if (escapeParentheses) tagText = tagText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-            
-            el.textContent = tagText;
+
+            // 표시: 코어 태그에만 치환/이스케이프 적용, 가중치 표기는 그대로 감싼다.
+            let coreText = coreTag;
+            if (replaceUnderscores) coreText = coreText.replace(/_/g, " ");
+            if (escapeParentheses) coreText = coreText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+            el.textContent = formatTagWeight(coreText, weight);
+            if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
+
+            // 클릭 삭제 — 위치(idx) 기반으로 정확히 그 토큰만 제거(중복 태그 안전).
             el.onclick = () => {
-              // 해당 태그 삭제 로직
-              const newTags = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "" && t !== tag);
-              currentResultData.final_prompt = newTags.join(", ");
-              displayResults(); // 재렌더링
+              const toks = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "");
+              toks.splice(idx, 1);
+              currentResultData.final_prompt = toks.join(", ");
+              syncFinalEditFromData();
+              displayResults();
             };
+
+            // 휠 가중치 조절(호버 중). DB 태그 뱃지에만 건다(고정/패스스루/그리드 제외).
+            el.addEventListener("wheel", (e) => {
+              e.preventDefault();          // 페이지 스크롤 방지
+              const delta = e.deltaY < 0 ? 0.1 : -0.1;   // 위로 굴리면 +, 아래로 -
+              bumpTagWeight(idx, delta);
+            }, { passive: false });
+
             finalContainer.appendChild(el);
           });
 
@@ -1657,6 +1770,9 @@
           if (tagsArray.length === 0 && parseFixedQuality().length === 0 && parseFixedArtist().length === 0) {
             finalContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
           }
+
+          // textarea(편집칸)를 데이터와 동기화. 단 포커스 중이면 덮어쓰지 않음.
+          syncFinalEditFromData();
         } else {
           finalPromptBox.style.display = "none";
         }
@@ -1717,6 +1833,9 @@
             const miss = ch.name_unmatched
               ? ' <span class="cc-miss" title="DB에 없는 캐릭터 — 이름은 자연어에만 사용">DB 미검색</span>'
               : "";
+            const pt = ch.is_passthrough
+              ? ' <span class="cc-pass" title="패스스루 — DB 미경유 신규 캐릭터, 이름을 태그 맨 앞+자연어에 사용">패스스루</span>'
+              : "";
 
             const tags = (ch.tags || []).map((t) => {
               let tx = t;
@@ -1726,7 +1845,7 @@
             }).join("");
 
             card.innerHTML =
-              '<div class="cc-head">' + head + series + miss + "</div>" +
+              '<div class="cc-head">' + head + series + miss + pt + "</div>" +
               '<div class="cc-tags">' +
               (tags || '<span style="color:var(--dim);font-size:12px;">태그 없음</span>') +
               "</div>";
@@ -1847,11 +1966,115 @@
         return out;
       }
       // DB 결과 태그 문자열에 고정 태그를 앞뒤로 붙여 최종 문자열 생성(복사용)
+      // 패스스루(신규 캐릭터) 이름 수집: DB를 못 뚫는 신규 캐릭터라 RAG 태그로는 못 나가므로,
+      // 사용자가 적은 캐릭터명을 프론트에서 태그 슬롯 맨 앞(퀄리티 고정태그 뒤)에 직접 끼운다.
+      // 원본(언더스코어 포함) 문자열을 반환 — 치환/이스케이프는 호출측에서 DB 태그와 동일하게 처리.
+      // ── Danbooru 태그 가중치 (tag:weight) 헬퍼 ──────────────────────────
+      // final_prompt 문자열의 각 요소는 "tag" 또는 "(tag:1.2)" 형태일 수 있다.
+      // 가중치 1.0 은 괄호 없이 "tag" 로 표기(기본값).
+      const _WEIGHT_RE = /^\((.+):\s*(-?\d+(?:\.\d+)?)\)$/;
+
+      function parseTagWeight(token) {
+        // 반환: { tag, weight } — 가중치 없으면 weight=1.0
+        const t = (token || "").trim();
+        const m = t.match(_WEIGHT_RE);
+        if (m) {
+          const w = parseFloat(m[2]);
+          return { tag: m[1].trim(), weight: isNaN(w) ? 1.0 : w };
+        }
+        return { tag: t, weight: 1.0 };
+      }
+
+      function formatTagWeight(tag, weight) {
+        // 1.0 이면 tag 만, 아니면 (tag:weight). 소수 1자리로 고정.
+        const w = Math.round(weight * 10) / 10;
+        if (Math.abs(w - 1.0) < 1e-9) return tag;
+        return "(" + tag + ":" + w.toFixed(1) + ")";
+      }
+
+      // final_prompt 문자열에 치환/이스케이프를 적용하되 가중치 표기는 보존한다.
+      // 각 토큰의 코어 태그에만 _→공백 / 괄호 이스케이프를 걸고, (core:weight) 형태는
+      // 가중치 괄호를 깨지 않도록 다시 감싼다.
+      function applyTagFormatting(dbTagString, replaceUnderscores, escapeParentheses) {
+        const tokens = (dbTagString || "").split(", ").map(t => t.trim()).filter(Boolean);
+        return tokens.map((tok) => {
+          const { tag, weight } = parseTagWeight(tok);
+          let core = tag;
+          if (replaceUnderscores) core = core.replace(/_/g, " ");
+          if (escapeParentheses) core = core.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+          return formatTagWeight(core, weight);
+        }).join(", ");
+      }
+
+      // 휠로 특정 토큰의 가중치를 delta(±0.1)만큼 조절하고 final_prompt 갱신.
+      // idx 는 data.final_prompt 분해 배열에서의 위치(중복 태그 안전하게 위치 기반).
+      function bumpTagWeight(idx, delta) {
+        if (!currentResultData || !currentResultData.final_prompt) return;
+        const tokens = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "");
+        if (idx < 0 || idx >= tokens.length) return;
+        const { tag, weight } = parseTagWeight(tokens[idx]);
+        let w = Math.round((weight + delta) * 10) / 10;
+        if (w < 0.1) w = 0.1;          // 하한 0.1 (0 이하 불가)
+        tokens[idx] = formatTagWeight(tag, w);
+        currentResultData.final_prompt = tokens.join(", ");
+        syncFinalEditFromData();        // textarea 동기화
+        displayResults();               // 뱃지 재렌더(가중치 표시 갱신)
+      }
+
+      // final_prompt(데이터) → textarea 표시. textarea 는 DB 태그만(고정태그 제외).
+      function syncFinalEditFromData() {
+        const ta = document.getElementById("final_prompt_edit");
+        if (!ta) return;
+        // textarea 가 포커스 중이면 사용자가 타이핑 중일 수 있으니 덮어쓰지 않음.
+        if (document.activeElement === ta) return;
+        ta.value = (currentResultData && currentResultData.final_prompt) || "";
+      }
+
+      // textarea 입력 → final_prompt(데이터) 갱신. 입력 중에는 뱃지 재렌더 안 함(커서 보존).
+      function onFinalEditInput() {
+        const ta = document.getElementById("final_prompt_edit");
+        if (!ta || !currentResultData) return;
+        // 쉼표 구분 그대로 저장(가중치 표기 (tag:1.2) 포함 가능). 빈 토큰 정리.
+        const tokens = ta.value.split(",").map(t => t.trim()).filter(Boolean);
+        currentResultData.final_prompt = tokens.join(", ");
+      }
+
+      // textarea blur → 정규화된 값으로 뱃지 재렌더 + textarea 재동기화.
+      function onFinalEditBlur() {
+        onFinalEditInput();
+        displayResults();
+      }
+
+      function parsePassthroughNames() {
+        if (!currentResultData || !Array.isArray(currentResultData.characters)) return [];
+        const out = [];
+        currentResultData.characters.forEach((ch) => {
+          if (ch && ch.is_passthrough && ch.name && ch.name.trim()) {
+            const nm = ch.name.trim();
+            if (!out.includes(nm)) out.push(nm);
+          }
+        });
+        return out;
+      }
+
+      // 패스스루 이름에 DB 태그와 동일한 치환/이스케이프를 적용(태그 슬롯에 들어가므로).
+      function passthroughForCopy() {
+        const replaceUnderscores = document.getElementById("replace_underscores").checked;
+        const escapeParentheses = document.getElementById("escape_parentheses").checked;
+        return parsePassthroughNames().map((nm) => {
+          let t = nm;
+          if (replaceUnderscores) t = t.replace(/_/g, " ");
+          if (escapeParentheses) t = t.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+          return t;
+        });
+      }
+
       function withFixedTags(dbTagString) {
         const q = parseFixedQuality();
         const a = parseFixedArtist();
+        const pt = passthroughForCopy();   // 퀄리티 뒤, DB 앞
         const mid = (dbTagString || "").split(", ").map(t => t.trim()).filter(Boolean);
-        return [...q, ...mid, ...a].join(", ");
+        return [...q, ...pt, ...mid, ...a].join(", ");
       }
       // 고정 태그 입력이 바뀌면 결과 영역 다시 렌더
       function refreshFixedTags() {
@@ -1863,10 +2086,10 @@
         if (elementId === "res_final_prompt") {
           const replaceUnderscores = document.getElementById("replace_underscores").checked;
           const escapeParentheses = document.getElementById("escape_parentheses").checked;
-          // DB 태그에만 치환/이스케이프 적용, 고정 태그는 원형 유지
-          let dbTags = currentResultData.final_prompt || "";
-          if (replaceUnderscores) dbTags = dbTags.replace(/_/g, " ");
-          if (escapeParentheses) dbTags = dbTags.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+          // DB 태그에만 치환/이스케이프 적용(가중치 표기는 보존), 고정 태그는 원형 유지
+          let dbTags = applyTagFormatting(
+            currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
+          );
           text = withFixedTags(dbTags);
         } else {
           text = document.getElementById(elementId).textContent;
@@ -1896,9 +2119,9 @@
       function copyAll() {
         const replaceUnderscores = document.getElementById("replace_underscores").checked;
         const escapeParentheses = document.getElementById("escape_parentheses").checked;
-        let dbTags = currentResultData.final_prompt || "";
-        if (replaceUnderscores) dbTags = dbTags.replace(/_/g, " ");
-        if (escapeParentheses) dbTags = dbTags.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+        let dbTags = applyTagFormatting(
+          currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
+        );
         let finalTags = withFixedTags(dbTags);
         const nlPrompt = document.getElementById("res_nl_prompt").textContent.trim();
         

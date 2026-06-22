@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 시스템 프롬프트
 # ---------------------------------------------------------------------------
+# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
 SYSTEM_KEYWORDS = """You are an expert anime illustration tag extractor.
 Convert the Korean prompt into a JSON array of specific English keywords.
 Break down visual elements: character count, hair/eye traits, clothing, actions, objects, background.
@@ -34,6 +35,7 @@ Prefer concrete Danbooru-style phrasing (e.g. '1girl', 'blue hair', 'school unif
 Return ONLY a valid JSON array of strings. No markdown, no extra text.
 Example: ["1girl", "blue hair", "school uniform", "rain", "street"]"""
 
+# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
 SYSTEM_REFINE = """You are a Danbooru tag matching assistant.
 Given a Korean intent and a list of candidate Danbooru tags retrieved from a database,
 select and refine the English tag expressions that best match the user's actual intent.
@@ -41,6 +43,7 @@ The candidates are real tags from the database; prefer them, but you may adjust 
 to better English tag form if needed.
 Return ONLY a valid JSON array of English strings. No markdown, no extra text."""
 
+# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
 SYSTEM_SELECT = """You are a strict Danbooru tag selector.
 Given a Korean intent and structured candidate tags (with categories),
 choose the final set of tags that faithfully represent the intent.
@@ -54,14 +57,21 @@ not in the candidates. Copy tags exactly as given, character for character.
 Exclude tags pulled in only by vector similarity but not actually described.
 Return ONLY a valid JSON array of the chosen English tag strings. No markdown."""
 
-SYSTEM_NL = """You are an expert prompt engineer for the ANIMA image generation model.
-Given a Korean intent and English keywords, write a descriptive natural-language English prompt.
+SYSTEM_NL = """You are a prompt writer for the ANIMA image generation model.
+Given a Korean intent and English keywords, write a natural-language English prompt that conveys the keywords.
 Rules:
-1. At least 2 sentences. More descriptive is better.
-2. Standard capitalization for character/series names.
-3. If no specific character, use plain nouns like 'A girl', 'A boy'. No 'beautiful'/'cute' embellishment.
-4. Return ONLY the raw prompt text. No markdown, no explanations."""
+1. Cover the given keywords. Do not add subjects, objects, or attributes that are not in the keywords or Korean intent.
+2. CHARACTER OPENING: If the keywords contain a character tag, the prompt MUST start with that character, then describe appearance. Danbooru character tags look like "name_(series)" or just "name".
+   - With series: start "<Name> from <Series>, ..." (e.g. tag "frieren_(sousou_no_frieren)" -> "Frieren from Sousou no Frieren, ..."). Convert underscores to spaces, use standard capitalization.
+   - Without series (bare name tag): start "<Name>, ...".
+   - The word "from" linking a character to its series must always be kept, regardless of tone.
+   - If MULTIPLE character tags are present, open with each character (name first, then appearance), one per clause.
+3. If NO character tag is present, use a plain noun like 'A girl', 'A boy', 'A man', 'A woman' to open, then appearance.
+4. Standard capitalization for character/series names; convert tag underscores to spaces in the prose.
+{TONE_RULES}
+Return ONLY the raw prompt text. No markdown, no explanations."""
 
+# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
 SYSTEM_VERIFY = """You are a strict tag reviewer for Danbooru tags.
 Identify tags from the 'Matched Tags' list that are unrelated to the 'Korean Intent'.
 Return ONLY a JSON array of suspicious tag strings. Empty array [] if all are fine. No markdown."""
@@ -106,7 +116,7 @@ CORE RULE (critical for multi-character scenes):
 For EACH character, name the character first, then immediately describe their appearance. Never list character names without appearance description — the model confuses characters otherwise. Even when a name is given, weave in the appearance tags for that character.
 
 WHEN THERE ARE 2 OR MORE CHARACTERS:
-Describe each character in its own SEPARATE sentence. Do NOT pack multiple characters into one sentence, and do NOT blend their attributes. One sentence per character, each starting with that character (e.g. "On the left, <Name A> ... ." then "On the right, <Name B> ... ."). Keeping characters in distinct sentences is what prevents the model from mixing them up.
+Describe each character in its own SEPARATE sentence. Do NOT pack multiple characters into one sentence, and do NOT blend their attributes. One sentence per character, each starting with that character's name or handle (e.g. "<Name A> ... ." then "<Name B> ... ."). Only mention spatial position (left/right/center) if the description actually specifies it — do not invent positions. Keeping characters in distinct sentences is what prevents the model from mixing them up.
 
 RULES:
 1. Write each character as its own clause/sentence: "<Name> from <Series>, with <appearance woven from the tags>, ...". If a character has a series, include it once.
@@ -115,8 +125,45 @@ RULES:
 4. If a block has NO name and is not original, use a plain noun ("A girl", "A boy", "A figure") consistent with the description, then the appearance.
 5. Keep every character visually distinct so the model can separate them. Do not merge two characters' attributes into the same sentence.
 6. End with the background/setting as a shared clause if a BACKGROUND block is given.
-7. Use standard capitalization for character/series names. No 'beautiful'/'cute' filler. At least one full sentence per character.
-8. Return ONLY the raw prompt text. No markdown, no headings, no explanations."""
+7. Use standard capitalization for character/series names. Do not add attributes that are not in the given tags/description.
+8. SOURCE STRUCTURE (always preserved, regardless of tone): whenever a character has a series, keep the "<Character> from <Series>" structure intact (e.g. "Fern from Sousou no Frieren"). The linking word "from" must never be dropped or replaced, even under a compressed tone. Tone may shorten the appearance description, but not this name-to-series link.
+{TONE_RULES}
+9. Return ONLY the raw prompt text. No markdown, no headings, no explanations."""
+
+
+# ---------------------------------------------------------------------------
+# 자연어(NL) 톤 프리셋
+# ---------------------------------------------------------------------------
+# 사용자가 NL 프롬프트의 장황함을 조절한다. SYSTEM_NL / SYSTEM_NL_MULTI 의
+# {TONE_RULES} 슬롯에 주입되며, 톤별 권장 temperature 도 함께 정의한다.
+#   - rich     : 기존 동작(2문장 이상, 묘사적). 하위호환 기본값.
+#   - plain    : 평이/담백. 정보만, 수식어 금지.
+NL_TONES = {
+    "rich": {
+        "temperature": 0.4,
+        "rules": (
+            "TONE: Write at least 2 sentences, descriptive and fluent. "
+            "Avoid empty praise words like 'beautiful', 'cute', 'gorgeous', 'stunning', "
+            "but you may use connective and descriptive phrasing freely."
+        ),
+    },
+    "plain": {
+        "temperature": 0.3,
+        "rules": (
+            "TONE: Keep it plain and factual. State only what the keywords say, in simple sentences. "
+            "Do NOT add decorative adjectives or mood words (no 'beautiful', 'cute', 'gorgeous', "
+            "'stunning', 'elegant', 'delicate', 'ethereal', 'breathtaking', 'mesmerizing', etc.). "
+            "No metaphors, no scene-setting beyond the given keywords. Short, direct sentences. "
+            "Still keep any '<Character> from <Series>' source structure intact."
+        ),
+    },
+}
+DEFAULT_NL_TONE = "rich"
+
+
+def _tone(tone: str | None) -> dict:
+    """톤 키 → 프리셋. 알 수 없으면 기본(rich)."""
+    return NL_TONES.get((tone or DEFAULT_NL_TONE), NL_TONES[DEFAULT_NL_TONE])
 
 
 # ---------------------------------------------------------------------------
@@ -225,12 +272,21 @@ async def select_final(
 async def generate_nl_prompt(
     korean_prompt: str,
     keywords: list[str],
-    temperature: float = 0.4,
+    temperature: float | None = None,
+    tone: str | None = None,
 ) -> str:
-    """[자연어 생성] Anima용 자연어 영어 프롬프트. temperature 약간 높게."""
+    """
+    [자연어 생성] Anima용 자연어 영어 프롬프트.
+
+    tone: rich(기존)/plain(담백). {TONE_RULES} 슬롯에 룰 주입.
+    temperature: None 이면 톤별 권장 온도 사용. 값이 오면(UI 슬라이더 등) 그 값 우선.
+    """
+    preset = _tone(tone)
+    temp = preset["temperature"] if temperature is None else temperature
+    system = SYSTEM_NL.replace("{TONE_RULES}", preset["rules"])
     user = f"Korean intent: {korean_prompt}\nKeywords: {', '.join(keywords)}"
     try:
-        content = await _call(SYSTEM_NL, user, temperature)
+        content = await _call(system, user, temp)
         return _strip_markdown(content)
     except LLMError:
         return ""  # 자연어는 보조 수단이라 실패해도 전체를 막지 않음
@@ -315,11 +371,156 @@ async def select_character_and_series(
     return char_tag, series_tag
 
 
+# ── 일반 모드 캐릭터 추출(2단계) ──────────────────────────────────
+# 일반 모드는 캐릭터명을 별도 필드로 받지 않으므로, 한 문장에서 (작품?, 캐릭터) 쌍을
+# 추출해 cat3/cat4 검색 후 일괄 판별한다. split 의 인물칸 입력을 LLM 추출로 대체한 것.
+SYSTEM_EXTRACT_PAIRS = """You extract character mentions from a Korean image-generation prompt.
+
+Find every specific, NAMED character a user wants drawn. For each, output the character name and (if the prompt mentions it) the series/work it belongs to.
+
+RULES:
+1. Only extract NAMED characters (a proper name like "라이덴 쇼군", "프리렌", "Hatsune Miku"). Do NOT extract generic people ("여자", "소녀", "a girl", "남자 둘") — those are not characters.
+2. series is OPTIONAL. Include it only if the prompt actually names the work (e.g. "원신", "장송의 프리렌"). If no work is mentioned, use an empty string.
+3. Keep names as the user wrote them (Korean or English), do not translate or normalize.
+4. If the prompt contains NO named character, return an empty array.
+
+Return ONLY a JSON array, no markdown:
+[{"character": "<name>", "series": "<series or empty>"}]
+Example input: "원신 라이덴 쇼군이랑 프리렌이 비 오는 거리에서"
+Example output: [{"character": "라이덴 쇼군", "series": "원신"}, {"character": "프리렌", "series": ""}]"""
+
+
+async def extract_character_pairs(
+    korean_prompt: str,
+    temperature: float = 0.0,
+) -> list[dict]:
+    """
+    [일반 모드 1단계] 한국어 프롬프트에서 (작품?, 캐릭터) 쌍 배열 추출.
+
+    Returns: [{"character": str, "series": str}, ...]  — 없으면 빈 배열.
+    빈 배열이면 호출측이 기존 4-step 만 태운다(오버헤드 최소).
+    """
+    if not korean_prompt.strip():
+        return []
+    try:
+        content = await _call(SYSTEM_EXTRACT_PAIRS, korean_prompt, temperature)
+    except LLMError:
+        return []
+    txt = _strip_markdown(content)
+    import json, re as _re
+    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
+    if not m:
+        return []
+    try:
+        arr = json.loads(m.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return []
+    out = []
+    for item in arr if isinstance(arr, list) else []:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("character") or "").strip()
+        series = (item.get("series") or "").strip()
+        if name:
+            out.append({"character": name, "series": series})
+    return out
+
+
+SYSTEM_SELECT_PAIRS = """You select the correct Danbooru character tags for several character mentions at once.
+
+You are given a list of PAIRS. Each pair has:
+- the user's intended CHARACTER name (as typed),
+- the user's intended SERIES name (may be empty),
+- CHARACTER_CANDIDATES and SERIES_CANDIDATES retrieved from the DB for THAT pair (each with score and aliases).
+
+For EACH pair, pick the single best character tag from that pair's CHARACTER_CANDIDATES.
+
+RULES:
+1. Choose ONLY from that pair's provided candidates. Never invent a tag. If nothing fits, use empty string for that pair.
+2. The user's intent dominates the vector score. A lower-scored candidate that matches the user's stated name/series beats a higher-scored mismatch.
+3. If a SERIES is given for the pair, prefer the character candidate whose "name_(series)" matches that series.
+4. Disambiguate within the same series by the NAME the user typed (e.g. "프리렌"/"frieren" -> "frieren", NOT a side character like "linie_(sousou_no_frieren)").
+5. Match across languages and aliases (Korean vs English vs alias).
+6. If the user's character is clearly not among that pair's candidates, return "" for it (do not force a wrong pick).
+
+Return ONLY a JSON array, one object per input pair IN THE SAME ORDER, no markdown:
+[{"character": "<tag or empty>"}]"""
+
+
+async def select_character_pairs(
+    pairs: list[dict],
+    temperature: float = 0.0,
+) -> list[str]:
+    """
+    [일반 모드 2단계] 여러 (작품?, 캐릭터) 쌍을 한 번에 판별.
+
+    pairs 각 원소: {
+        "character": str, "series": str,
+        "char_candidates": [{"tag","score","aliases"}...],
+        "series_candidates": [{"tag","score","aliases"}...],
+    }
+    Returns: 입력 순서대로 character_tag 리스트(못 고르면 "").
+             작품 태그는 일반 모드에선 최종/NL 모두 미사용이므로 반환하지 않음.
+    """
+    if not pairs:
+        return []
+
+    def _fmt(cands: list[dict]) -> str:
+        lines = []
+        for c in (cands or []):
+            al = ", ".join((c.get("aliases") or [])[:6])
+            lines.append(
+                f'- {c["tag"]} (score={c.get("score", 0):.3f}'
+                + (f', aliases=[{al}]' if al else "")
+                + ")"
+            )
+        return "\n".join(lines) if lines else "(none)"
+
+    blocks = []
+    for i, p in enumerate(pairs):
+        blocks.append(
+            f'PAIR {i}:\n'
+            f'  CHARACTER name: "{p.get("character","")}"\n'
+            f'  SERIES name: "{p.get("series","")}"\n'
+            f'  CHARACTER_CANDIDATES:\n{_fmt(p.get("char_candidates"))}\n'
+            f'  SERIES_CANDIDATES:\n{_fmt(p.get("series_candidates"))}'
+        )
+    user = "\n\n".join(blocks)
+
+    try:
+        content = await _call(SYSTEM_SELECT_PAIRS, user, temperature)
+    except LLMError:
+        return ["" for _ in pairs]
+
+    txt = _strip_markdown(content)
+    import json, re as _re
+    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
+    if not m:
+        return ["" for _ in pairs]
+    try:
+        arr = json.loads(m.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return ["" for _ in pairs]
+
+    out = []
+    for i, p in enumerate(pairs):
+        tag = ""
+        if isinstance(arr, list) and i < len(arr) and isinstance(arr[i], dict):
+            tag = (arr[i].get("character") or "").strip()
+        # 환각 방지: 해당 쌍 후보에 실제 존재하는 태그만
+        cand_set = {c["tag"] for c in (p.get("char_candidates") or [])}
+        if tag not in cand_set:
+            tag = ""
+        out.append(tag)
+    return out
+
+
 async def generate_nl_multi(
     characters: list[dict],
     background_tags: list[str] | None = None,
     background_desc: str = "",
-    temperature: float = 0.4,
+    temperature: float | None = None,
+    tone: str | None = None,
 ) -> str:
     """
     [분할입력 자연어] 인물 블록 + 배경으로 인물 단위 자연어 프롬프트 생성.
@@ -349,6 +550,10 @@ async def generate_nl_multi(
                 parts.append(f'name="{ch["name"]}"')
             if ch.get("series"):
                 parts.append(f'series="{ch["series"]}"')
+            if ch.get("is_passthrough"):
+                # 패스스루: DB에 아직 없는 신규 캐릭터를 사용자가 직접 지정.
+                # 매칭된 캐릭터 태그가 없어도 이 이름을 그대로 캐릭터 핸들로 써야 한다.
+                parts.append("(new/unlisted character — use this name as-is as the character handle)")
         if ch.get("tags"):
             parts.append(f'tags=[{", ".join(ch["tags"])}]')
         if ch.get("desc"):
@@ -363,9 +568,12 @@ async def generate_nl_multi(
             bparts.append(f'description="{background_desc}"')
         lines.append("  ".join(bparts))
 
+    preset = _tone(tone)
+    temp = preset["temperature"] if temperature is None else temperature
+    system = SYSTEM_NL_MULTI.replace("{TONE_RULES}", preset["rules"])
     user = "\n".join(lines)
     try:
-        content = await _call(SYSTEM_NL_MULTI, user, temperature)
+        content = await _call(system, user, temp)
         return _strip_markdown(content)
     except LLMError:
         return ""

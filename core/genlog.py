@@ -87,15 +87,60 @@ def console_log_generation(
     final_tags: list[str],
     nl_prompt: str,
     mode: str = "basic",
+    settings: dict | None = None,
 ) -> None:
-    """생성 1건을 콘솔에 보기 좋게 출력(파일 기록과 독립)."""
+    """
+    생성 1건을 콘솔에 보기 좋게 출력(파일 기록과 독립).
+
+    settings: 생성에 쓰인 설정(톤/검색범위/temperature 등)을 한 줄로 덧붙인다.
+    """
     try:
         head = _MODE_EMOJI.get(mode, f"⚪ {mode}")
         tags_str = ", ".join(_spacify(final_tags))
         logger.info(head)
         logger.info(f"📝 사용자 프롬프트: {user_input}")
+        if settings:
+            logger.info(f"⚙️  설정: {_format_settings(settings)}")
         logger.info(f"✨ 최종 반환 프롬프트: {tags_str}")
         if nl_prompt:
             logger.info(f"   └ 자연어: {nl_prompt}")
     except Exception as e:
         logger.warning(f"콘솔 로그 출력 실패: {e}")
+
+
+def _format_settings(settings: dict) -> str:
+    """설정 dict 를 사람이 읽기 좋은 한 줄로. None/빈값은 생략."""
+    parts = []
+    for k, v in settings.items():
+        if v is None or v == "":
+            continue
+        parts.append(f"{k}={v}")
+    return ", ".join(parts) if parts else "(기본값)"
+
+
+# ── 요청 수신 / 에러 콘솔 로그 ─────────────────────────────────────
+def console_log_request(mode: str, waiting: int) -> None:
+    """
+    요청이 들어온 즉시 콘솔에 한 줄 남긴다(입력 내용 dump 없이 간단히).
+
+    waiting: 이 요청 포함 대기 인원(자기 차례까지 앞에 몇 명+자기). 1이면 바로 처리.
+    """
+    try:
+        head = _MODE_EMOJI.get(mode, f"⚪ {mode}")
+        if waiting > 1:
+            logger.info(f"📥 요청 들어옴 ({head}) · 큐 {waiting}명 대기 중")
+        else:
+            logger.info(f"📥 요청 들어옴 ({head})")
+    except Exception as e:
+        logger.warning(f"요청 로그 출력 실패: {e}")
+
+
+def console_log_error(mode: str, user_input: str, err: Exception) -> None:
+    """생성 처리 중 예외를 콘솔에 남긴다(파일 미기록 — 콘솔 전용)."""
+    try:
+        head = _MODE_EMOJI.get(mode, f"⚪ {mode}")
+        logger.error(f"❌ 생성 실패 ({head}): {type(err).__name__}: {err}")
+        if user_input:
+            logger.error(f"   └ 입력: {user_input}")
+    except Exception as e:
+        logger.warning(f"에러 로그 출력 실패: {e}")

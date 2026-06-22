@@ -58,6 +58,86 @@ def looks_like_person_unit(unit: str) -> bool:
     return bool(_PERSON_RE.search(unit.lower()))
 
 
+# ---------------------------------------------------------------------------
+# 일반 모드 캐릭터 해석 (2단계: 쌍 추출 → cat3/cat4 검색 → 일괄 판별)
+# ---------------------------------------------------------------------------
+async def _resolve_characters(
+    korean_prompt: str, variant: str, top_k: int,
+) -> tuple[list[str], list[str]]:
+    """
+    한 문장에서 (작품?, 캐릭터) 쌍을 추출·판별해 확정 캐릭터 태그를 얻는다.
+
+    절차:
+      1) LLM 이 (작품?, 캐릭터) 쌍 배열 추출. 없으면 ([], []) 즉시 반환(오버헤드 0).
+      2) 각 쌍을 cat4(캐릭터)/cat3(작품) top_k 검색.
+      3) 모든 쌍의 후보를 한 번에 LLM 에 줘서 쌍별 캐릭터 태그 선택(환각=후보 밖 제거).
+
+    Returns:
+      (char_tags, char_names)
+        char_tags : 확정된 Danbooru 캐릭터 태그(작품 태그는 미포함 — 최종/NL 모두 제외).
+        char_names: 사용자가 적은 캐릭터/작품 이름들(일반 검색 텍스트에서 제거할 대상).
+    """
+    pairs = await llm.extract_character_pairs(korean_prompt)
+    if not pairs:
+        return [], []
+
+    def _cands(hits) -> list[dict]:
+        out = []
+        for r in (getattr(hits, "results", None) or []):
+            out.append({
+                "tag": r.tag,
+                "score": r.score,
+                "aliases": getattr(r, "aliases", []) or [],
+            })
+        return out
+
+    enriched = []
+    names: list[str] = []
+    for pr in pairs:
+        name = pr.get("character", "").strip()
+        series = pr.get("series", "").strip()
+        if name:
+            names.append(name)
+        if series:
+            names.append(series)
+        char_cands: list[dict] = []
+        series_cands: list[dict] = []
+        if name:
+            c_hits = search_mod.search_character_only([name], variant, top_k=top_k)
+            if c_hits:
+                char_cands = _cands(c_hits[0])
+        if series:
+            s_hits = search_mod.search_copyright([series], variant, top_k=top_k)
+            if s_hits:
+                series_cands = _cands(s_hits[0])
+        enriched.append({
+            "character": name, "series": series,
+            "char_candidates": char_cands, "series_candidates": series_cands,
+        })
+
+    chosen = await llm.select_character_pairs(enriched)
+    char_tags = []
+    for t in chosen:
+        if t and t not in char_tags:
+            char_tags.append(t)
+    return char_tags, names
+
+
+def _strip_units(units: list[str], names: list[str]) -> list[str]:
+    """분해 단위 리스트에서 캐릭터/작품 이름이 섞인 단위를 제거·정리.
+
+    이름이 통째로 한 단위면 그 단위를 버리고, 단위 안에 이름이 일부 포함되면
+    그 부분만 지운다(남은 텍스트가 비면 단위 제거). 캐릭터 정체성은 cat4 확정태그가
+    담당하므로 일반 검색은 동작/속성만 찾으면 된다.
+    """
+    out = []
+    for u in units:
+        stripped = search_mod.strip_names_from_text(u, names).strip()
+        if stripped:
+            out.append(stripped)
+    return out
+
+
 async def run_decomposed_pipeline(
     korean_prompt: str,
     general_variant: str = "c",
@@ -65,6 +145,7 @@ async def run_decomposed_pipeline(
     top_k: int = 5,
     generate_nl: bool = True,
     search_categories: set[int] | None = None,
+    nl_tone: str | None = None,
 ) -> DecomposedResult:
     """4회 분해 파이프라인 실행. 중간 산출물을 전부 담아 반환."""
     res = DecomposedResult(korean_prompt=korean_prompt)
@@ -114,7 +195,7 @@ async def run_decomposed_pipeline(
     # 환각 필터를 거친 final_tags 기준으로 생성(없는 태그가 NL에 새지 않게).
     if generate_nl:
         nl_basis = res.final_tags or res.en_units
-        res.nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis)
+        res.nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
 
     return res
 
@@ -126,6 +207,7 @@ async def stream_decomposed_pipeline(
     top_k: int = 5,
     generate_nl: bool = True,
     search_categories: set[int] | None = None,
+    nl_tone: str | None = None,
 ):
     """
     4회 분해 파이프라인을 단계별로 스트리밍 (async generator).
@@ -140,6 +222,12 @@ async def stream_decomposed_pipeline(
       - "final"    : 최종 태그 + 환각 (final_tags, hallucinated)
       - "nl"       : 자연어 프롬프트 (nl_prompt)
     """
+    # ── 0단계: 캐릭터 쌍 추출 + 판별 (일반 모드 캐릭터 지원) ──
+    # 한 문장에서 (작품?, 캐릭터) 쌍을 LLM이 뽑아 cat3/cat4 검색 후 일괄 판별.
+    # 없으면 빈 결과 → 기존 흐름 그대로(오버헤드 최소). 확정된 캐릭터 태그는 최종에
+    # 합본하고, 추출된 이름은 일반 검색 텍스트에서 제거해 _(cosplay) 오염을 막는다.
+    char_tags, char_names = await _resolve_characters(korean_prompt, general_variant, top_k)
+
     # ── 1단계: 한국어 분해 (+ 질의) ──
     ko_units = await dec.decompose_korean(korean_prompt)
     ko_attr = [u for u in ko_units if not looks_like_person_unit(u)]
@@ -149,6 +237,10 @@ async def stream_decomposed_pipeline(
         "status": "한국어 키워드 추출 완료",
         "data": {"ko_units": ko_units, "person_units": person_units},
     }
+
+    # 추출된 캐릭터 이름을 분해 단위에서 제거(일반검색 오염 차단).
+    if char_names:
+        ko_attr = _strip_units(ko_attr, char_names)
 
     ko_candidates: dict[str, list[str]] = {}
     if ko_attr:
@@ -162,6 +254,9 @@ async def stream_decomposed_pipeline(
         "status": "영어 키워드 추출 완료",
         "data": {"en_units": en_units},
     }
+
+    if char_names:
+        en_units = _strip_units(en_units, char_names)
 
     en_candidates: dict[str, list[str]] = {}
     if en_units:
@@ -188,6 +283,11 @@ async def stream_decomposed_pipeline(
     hallucinated = out_pool + dropped_db
     if hallucinated:
         logger.warning(f"환각 제거(풀밖 {out_pool} / DB밖 {dropped_db})")
+    # 확정 캐릭터 태그를 맨 앞에 합본(작품 태그는 미포함). 묘사검색이 _(cosplay) 등을
+    # 끌어왔으면 후처리로 제거(캐릭터 정체성은 cat4 확정태그가 담당).
+    kept = search_mod.drop_character_derived(kept)
+    if char_tags:
+        kept = char_tags + [t for t in kept if t not in char_tags]
     yield {
         "stage": "final",
         "status": "태그 완성",
@@ -198,7 +298,7 @@ async def stream_decomposed_pipeline(
     nl_prompt = ""
     if generate_nl:
         nl_basis = kept or en_units
-        nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis)
+        nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
     yield {
         "stage": "nl",
         "status": "완료",

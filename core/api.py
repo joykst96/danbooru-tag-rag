@@ -59,6 +59,12 @@ async def _take_ticket() -> int:
         return _gen_state["next"]
 
 
+def _waiting_count(my: int) -> int:
+    """티켓 my 기준 대기 인원(자기 포함). serving 이 처리할 번호, my 가 내 번호.
+    my==serving 이면 1(바로 나), 앞에 막힌 게 있으면 그만큼 +."""
+    return max(1, my - _gen_state["serving"] + 1)
+
+
 async def _advance_serving():
     async with _gen_lock:
         _gen_state["serving"] += 1
@@ -137,6 +143,9 @@ class GenerateRequest(BaseModel):
     search_categories: list[int] | None = Field(
         default=None, description="검색 풀 카테고리(고급). None/빈값이면 일반(cat0)만"
     )
+    nl_tone: str | None = Field(
+        default=None, description="자연어 톤: rich(기존)/plain(담백)/primitive(원시인). None이면 rich"
+    )
 
 
 class DirectSearchRequest(BaseModel):
@@ -152,12 +161,16 @@ class CharBlockIn(BaseModel):
     series: str = Field(default="", description="작품명(옵션)")
     desc: str = Field(default="", description="캐릭터묘사(한국어)")
     is_original: bool = Field(default=False, description="오리지널 캐릭터(작품/캐릭터 검색 skip)")
+    is_passthrough: bool = Field(default=False, description="패스스루(신규 캐릭터): DB 검색 skip, 입력 이름을 NL 핸들로 사용")
 
 
 class GenerateSplitRequest(BaseModel):
     characters: list[CharBlockIn] = Field(default_factory=list, description="인물칸 목록")
     background: str = Field(default="", description="배경/공통요소(한국어)")
     nl_temperature: float = Field(default=0.4)
+    nl_tone: str | None = Field(
+        default=None, description="자연어 톤: rich/plain/primitive. None이면 rich"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +184,7 @@ async def generate(req: GenerateRequest):
             return
 
         my = await _take_ticket()
+        genlog.console_log_request("basic", _waiting_count(my))
         _final_tags: list[str] = []
         _nl_prompt: str = ""
         try:
@@ -186,6 +200,7 @@ async def generate(req: GenerateRequest):
                 top_k=5,
                 generate_nl=True,
                 search_categories=set(req.search_categories) if req.search_categories else None,
+                nl_tone=req.nl_tone,
             ):
                 stage = ev["stage"]
                 d = ev["data"]
@@ -219,7 +234,18 @@ async def generate(req: GenerateRequest):
                 final_tags=_final_tags,
                 nl_prompt=_nl_prompt,
                 mode="basic",
+                settings={
+                    "톤": req.nl_tone or "rich",
+                    "검색범위": req.search_categories or "일반(기본)",
+                    "유사도": req.threshold,
+                    "전처리기온도": req.kw_temperature,
+                    "자연어온도": req.nl_temperature,
+                },
             )
+        except Exception as e:
+            # 파이프라인 예외/연결끊김 등 — 콘솔에만 남기고(파일 미기록) 차례는 넘긴다.
+            genlog.console_log_error("basic", req.prompt.strip(), e)
+            raise
         finally:
             # 성공/실패/연결끊김 무엇이든 다음 사람에게 차례를 넘겨야 큐가 안 막힘
             await _advance_serving()
@@ -239,7 +265,7 @@ async def generate_split(req: GenerateSplitRequest):
     """분할입력(고급) — 인물칸 N + 배경칸 1. 큐는 /api/generate 와 공유."""
     async def stream():
         blocks = [
-            CharBlock(name=c.name, series=c.series, desc=c.desc, is_original=c.is_original)
+            CharBlock(name=c.name, series=c.series, desc=c.desc, is_original=c.is_original, is_passthrough=c.is_passthrough)
             for c in req.characters
         ]
         has_char = any(
@@ -250,8 +276,10 @@ async def generate_split(req: GenerateSplitRequest):
             return
 
         my = await _take_ticket()
+        genlog.console_log_request("split", _waiting_count(my))
         _final_tags: list[str] = []
         _nl_prompt: str = ""
+        _err_input: str = f"{len(req.characters)}인물" + (" +배경" if req.background.strip() else "")
         try:
             async for w in _wait_for_turn(my):
                 yield w
@@ -262,6 +290,7 @@ async def generate_split(req: GenerateSplitRequest):
                 variant=MAIN_VARIANT,
                 top_k=5,
                 generate_nl=True,
+                nl_tone=req.nl_tone,
             ):
                 stage = ev["stage"]
                 d = ev["data"]
@@ -287,6 +316,12 @@ async def generate_split(req: GenerateSplitRequest):
                 parts = []
                 if c.is_original:
                     parts.append("[오리지널]")
+                elif c.is_passthrough:
+                    parts.append("[패스스루]")
+                    if c.series.strip():
+                        parts.append(f"[{c.series.strip()}]")
+                    if c.name.strip():
+                        parts.append(c.name.strip())
                 else:
                     if c.series.strip():
                         parts.append(f"[{c.series.strip()}]")
@@ -306,7 +341,7 @@ async def generate_split(req: GenerateSplitRequest):
                 mode="split",
                 extra={
                     "characters": [
-                        {"name": c.name, "series": c.series, "desc": c.desc}
+                        {"name": c.name, "series": c.series, "desc": c.desc, "is_passthrough": c.is_passthrough}
                         for c in req.characters
                     ],
                     "background": req.background,
@@ -317,7 +352,15 @@ async def generate_split(req: GenerateSplitRequest):
                 final_tags=_final_tags,
                 nl_prompt=_nl_prompt,
                 mode="split",
+                settings={
+                    "톤": req.nl_tone or "rich",
+                    "자연어온도": req.nl_temperature,
+                    "인물수": len(req.characters),
+                },
             )
+        except Exception as e:
+            genlog.console_log_error("split", _err_input, e)
+            raise
         finally:
             await _advance_serving()
 

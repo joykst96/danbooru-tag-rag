@@ -52,6 +52,7 @@ class CharBlock:
     series: str = ""      # 작품명(공백 가능)
     desc: str = ""        # 캐릭터묘사(한국어)
     is_original: bool = False  # 오리지널 캐릭터: 작품/캐릭터 검색 skip, NL이 임의 이름 할당
+    is_passthrough: bool = False  # 패스스루: DB에 없는 신규 캐릭터. 작품/캐릭터 검색 skip, 입력 이름을 NL 핸들로 그대로 사용
 
 
 @dataclass
@@ -61,6 +62,7 @@ class CharResult:
     series: str = ""
     desc: str = ""
     is_original: bool = False                               # 오리지널 캐릭터 플래그
+    is_passthrough: bool = False                            # 패스스루(신규 캐릭터) 플래그
     series_tags: list[str] = field(default_factory=list)   # cat3 히트
     char_tags: list[str] = field(default_factory=list)     # cat4 히트
     attr_tags: list[str] = field(default_factory=list)     # cat0 속성(환각필터 후)
@@ -93,36 +95,9 @@ class SplitResult:
     nl_prompt: str = ""
 
 
-def _strip_names_from_text(text: str, names: list[str]) -> str:
-    """
-    배경 묘사에서 인물 이름을 제거한다(검색용 텍스트 전처리).
-
-    공통칸에 "A와 B가 마주본다"처럼 인물 이름으로 동작을 지시하면, 그 이름이
-    cat0 일반검색을 타서 캐릭터 파생 태그(예: xxx_(cosplay))를 잡는 오염이 생긴다.
-    이름→인물 연결은 인물칸이 이미 담당하므로, 배경 '검색'에서는 이름을 빼고
-    동작/구도만 찾는다. (NL용 배경 묘사는 원본을 그대로 쓰므로 구도 정보는 보존됨.)
-
-    표기 변형(띄어쓰기) 대응: "라이덴 쇼군"으로 등록해도 배경에 "라이덴쇼군"으로
-    붙여 쓴 경우를 잡기 위해, 이름의 공백을 '공백 0개 이상' 패턴으로 바꿔 매칭한다.
-    """
-    out = text
-    # 긴 이름부터 제거(부분문자열 충돌 방지). 대소문자 무시.
-    for nm in sorted([n.strip() for n in names if n.strip()], key=len, reverse=True):
-        # 이름 내부 공백을 \s* 로 바꿔 띄어쓰기 변형 흡수("라이덴 쇼군"↔"라이덴쇼군")
-        pat = r"\s*".join(re.escape(part) for part in nm.split())
-        out = re.sub(pat, " ", out, flags=re.IGNORECASE)
-    return out
-
-
-# 배경 검색 결과에서 제거할 캐릭터 파생 태그 패턴.
-# 배경은 cat0(일반)만 검색하지만, 이름이 새어들어가면 'xxx_(cosplay)' 같은
-# 캐릭터 파생이 잡힌다. 배경 묘사 결과로서는 사실상 항상 오염이므로 후처리로 제거.
-_COSPLAY_RE = re.compile(r"\(cosplay\)\s*$", re.IGNORECASE)
-
-
-def _drop_character_derived(tags: list[str]) -> list[str]:
-    """배경 결과에서 _(cosplay) 등 캐릭터 파생 태그를 제거(이중 방어)."""
-    return [t for t in tags if not _COSPLAY_RE.search(t)]
+# 이름 오염 차단 헬퍼는 search 모듈로 이동(split·일반 모드 공용). 기존 이름 alias 유지.
+_strip_names_from_text = search_mod.strip_names_from_text
+_drop_character_derived = search_mod.drop_character_derived
 
 
 async def _describe_attr(
@@ -162,7 +137,24 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
     res = CharResult(
         name=block.name.strip(), series=block.series.strip(),
         desc=block.desc.strip(), is_original=block.is_original,
+        is_passthrough=block.is_passthrough,
     )
+
+    # 패스스루(신규 캐릭터): DB에 아직 없는 캐릭터를 사용자가 직접 지정.
+    #   작품/캐릭터 DB 검색·LLM 선택을 모두 skip 하고, 입력한 이름/작품을 그대로
+    #   NL 핸들로 쓴다(생성 태그가 아니므로 output_tags 에는 안 들어가고 nl_tags 에만 반영).
+    #   묘사(desc)는 평소대로 4-step 본선을 태워 속성 태그를 만든다(이쪽은 RAG 통과).
+    #   name_unmatched 와 구분: 미스가 아니라 의도된 skip 이므로 False 유지.
+    if res.is_passthrough:
+        # 캐릭터 묘사칸에 자기 이름/작품을 또 적으면 그게 cat0 일반검색을 타서
+        # 'name_(cosplay)' 같은 캐릭터 파생 태그가 잡힌다(캐릭터 정체성은 별도 검색이 담당).
+        # 패스스루는 cat4 검색을 안 하지만, 입력 이름이 묘사에 섞이면 오염은 동일하므로
+        # 자기 칸 이름/작품을 검색 텍스트에서 제거하고 파생 태그도 후처리로 거른다.
+        res.attr_tags, _ = await _describe_attr(
+            res.desc, variant, top_k,
+            strip_names=[res.name, res.series], drop_derived=True,
+        )
+        return res
 
     # 오리지널 캐릭터: 작품/캐릭터 DB 검색 안 함(이름/작품 입력도 무시). 묘사만 검색.
     if not res.is_original and (res.name or res.series):
@@ -201,8 +193,16 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
                 res.name_unmatched = True
                 logger.info(f"캐릭터명 미스(이름만 NL): {res.name}")
 
-    # 캐릭터묘사 → 4-step 본선 위임(한/영 분해 + LLM 선별 + 환각필터)
-    res.attr_tags, _ = await _describe_attr(res.desc, variant, top_k)
+    # 캐릭터묘사 → 4-step 본선 위임(한/영 분해 + LLM 선별 + 환각필터).
+    # 자기 칸 이름/작품 오염 차단: 묘사칸에 자기 캐릭터 이름을 또 적으면(예: 묘사에
+    # "A캐릭터가 ~한다") 그 이름이 cat0 일반검색을 타서 'A_(cosplay)' 같은 파생 태그가
+    # 잡혀 최종에 [정식 캐릭터태그, A_(cosplay)] 가 중복으로 들어간다. 캐릭터 정체성은
+    # 위의 cat4(search_character_only) 검색이 담당하므로, 묘사칸은 속성/동작만 찾으면 된다.
+    # → 자기 name/series 를 검색 텍스트에서 제거 + _(cosplay) 등 파생 태그 후처리 제거.
+    res.attr_tags, _ = await _describe_attr(
+        res.desc, variant, top_k,
+        strip_names=[res.name, res.series], drop_derived=True,
+    )
     return res
 
 
@@ -212,6 +212,7 @@ async def run_split_pipeline(
     variant: str = "b",
     top_k: int = 5,
     generate_nl: bool = True,
+    nl_tone: str | None = None,
 ) -> SplitResult:
     """분할입력(고급) 파이프라인 실행."""
     res = SplitResult(background_desc=background_desc.strip())
@@ -241,13 +242,14 @@ async def run_split_pipeline(
     # 인물 단위 NL
     if generate_nl:
         char_payload = [
-            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original}
+            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
             for c in res.characters
         ]
         res.nl_prompt = await llm.generate_nl_multi(
             char_payload,
             background_tags=res.background_tags,
             background_desc=res.background_desc,
+            tone=nl_tone,
         )
 
     return res
@@ -259,6 +261,7 @@ async def stream_split_pipeline(
     variant: str = "b",
     top_k: int = 5,
     generate_nl: bool = True,
+    nl_tone: str | None = None,
 ):
     """
     분할입력 파이프라인 스트리밍 (async generator).
@@ -283,6 +286,7 @@ async def stream_split_pipeline(
                 "series": cr.series,
                 "tags": cr.output_tags(),
                 "name_unmatched": cr.name_unmatched,
+                "is_passthrough": cr.is_passthrough,
             },
         }
 
@@ -316,13 +320,14 @@ async def stream_split_pipeline(
     nl_prompt = ""
     if generate_nl:
         char_payload = [
-            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original}
+            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
             for c in char_results
         ]
         nl_prompt = await llm.generate_nl_multi(
             char_payload,
             background_tags=background_tags,
             background_desc=background_desc.strip(),
+            tone=nl_tone,
         )
     yield {
         "stage": "nl",
