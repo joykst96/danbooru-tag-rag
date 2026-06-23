@@ -203,16 +203,21 @@ async def _call(system: str, user: str, temperature: float, timeout: float = 120
 
 
 def _extract_json_array(content: str) -> list[str]:
-    """응답에서 JSON 문자열 배열을 추출. 실패 시 빈 리스트."""
-    match = re.search(r'\[.*\]', content, re.DOTALL)
-    if not match:
-        return []
-    try:
-        arr = json.loads(match.group(0))
+    """응답에서 JSON 문자열 배열을 추출. 실패 시 빈 리스트.
+
+    모델이 JSON 배열을 출력한 뒤 평문 자기검토를 덧붙이는 경우가 있다(실측:
+    '[...] (Wait, X is not in the pool...)' 식). 그 검토문에도 대괄호가 섞이면
+    greedy 매칭이 첫 '['부터 뒤쪽 ']'까지 통째로 삼켜 파싱이 깨진다.
+    → 평면 배열 후보(중첩 대괄호 없음)들을 순서대로 찾아, 유효한 '문자열 배열'을
+      처음 만나는 즉시 반환한다(보통 맨 앞 진짜 답).
+    """
+    for cand in re.findall(r'\[[^\[\]]*\]', content, re.DOTALL):
+        try:
+            arr = json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
         if isinstance(arr, list) and all(isinstance(x, str) for x in arr):
             return arr
-    except json.JSONDecodeError:
-        pass
     return []
 
 

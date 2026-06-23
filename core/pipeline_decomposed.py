@@ -283,6 +283,8 @@ async def stream_decomposed_pipeline(
     hallucinated = out_pool + dropped_db
     if hallucinated:
         logger.warning(f"환각 제거(풀밖 {out_pool} / DB밖 {dropped_db})")
+    if not kept:
+        logger.warning(f"⚠️ 최종 태그 빔 — raw_final={raw_final}, in_pool={in_pool}, dropped_db={dropped_db}")
     # 확정 캐릭터 태그를 맨 앞에 합본(작품 태그는 미포함). 묘사검색이 _(cosplay) 등을
     # 끌어왔으면 후처리로 제거(캐릭터 정체성은 cat4 확정태그가 담당).
     kept = search_mod.drop_character_derived(kept)

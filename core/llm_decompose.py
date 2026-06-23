@@ -110,7 +110,7 @@ CRITICAL RULES:
 4. Drop candidates pulled in by similarity but not actually described in the prompt.
 5. ORDER: Put person-count tags FIRST, at the very front of the array, before any other tags. These are tags like "1girl", "2girls", "1boy", "multiple_girls", "multiple_boys", "solo", "6+girls", etc. The candidates are mixed in arbitrary order, but the final output MUST lead with the count tags. Example: chosen tags ["grey_hair", "1girl", "smile"] must be output as ["1girl", "grey_hair", "smile"].
 
-Return ONLY a flat JSON array of chosen English tag strings, deduplicated. No markdown."""
+Return ONLY a flat JSON array of chosen English tag strings, deduplicated. Output the array and nothing else — no markdown, no preamble, and NO self-review or second-guessing after the array (do not write things like "Wait, let me re-check..."). Decide before you output; the array is your final answer."""
 
 
 # ---------------------------------------------------------------------------
@@ -207,4 +207,10 @@ async def complete_tags(
         f"Candidate tag pool ({len(pool)} tags):\n{', '.join(pool)}"
     )
     content = await llm._call(SYSTEM_COMPLETE, user, temperature)
-    return llm._extract_json_array(content)
+    parsed = llm._extract_json_array(content)
+    if not parsed:
+        import logging
+        logging.getLogger("core.llm_decompose").warning(
+            f"⚠️ complete_tags 파싱 실패 — LLM 원문(앞 500자): {content[:500]!r}"
+        )
+    return parsed
