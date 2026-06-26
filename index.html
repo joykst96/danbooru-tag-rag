@@ -344,6 +344,41 @@
         color: var(--bg);
         background: var(--primary);
       }
+      /* 고정태그 위치/우선순위용 소형 세그먼트 */
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 2px;
+        vertical-align: middle;
+      }
+      .seg-btn {
+        padding: 3px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--dim);
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.12s;
+        user-select: none;
+        white-space: nowrap;
+      }
+      .seg-btn:hover { color: var(--text); }
+      .seg-btn.active { color: var(--bg); background: var(--primary); }
+      /* 고정태그 블록 헤더: 제목 + 컨트롤을 한 줄에 정렬 */
+      .fixed-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      .fixed-head .ft-title { font-size: 12px; font-weight: 600; color: var(--text); }
+      .fixed-head .ft-ctl-label { font-size: 11px; color: var(--dim); font-weight: normal; }
       .cb-label {
         display: block;
         font-size: 11px;
@@ -992,6 +1027,14 @@
                 >소괄호 '()' 이스케이프 '\(\)' 처리</label
               >
             </div>
+            <div class="checkbox-container" style="align-items:center; gap:10px;">
+              <label style="font-size:13px;">가중치 표기</label>
+              <span class="seg" id="weight_syntax_group" style="margin-top:0;">
+                <button type="button" class="seg-btn active" data-syntax="local" onclick="setWeightSyntax(this)">로컬</button>
+                <button type="button" class="seg-btn" data-syntax="nai" onclick="setWeightSyntax(this)">NAI</button>
+              </span>
+              <span style="font-size:11px; color:var(--dim);">로컬 <code>(tag:1.2)</code> · NAI <code>1.2::tag::</code></span>
+            </div>
           </div>
 
           <!-- 6. 접이식 설정: 고정 태그 + 온도 미세조정 (입력 아래) -->
@@ -1003,29 +1046,44 @@
                 쉼표로 구분해 여러 개 입력할 수 있습니다.<br />
                 <span style="color:var(--warn);">※ 고정 태그는 언더스코어 치환·괄호 이스케이프가 적용되지 않고 입력 그대로 출력됩니다.</span>
               </p>
-              <div style="margin-bottom: 14px;">
-                <label for="fixed_quality" class="cb-label" style="font-size:12px;">퀄리티 태그 <span style="color:var(--dim);">(맨 앞)</span></label>
+              <div style="margin-bottom: 16px;">
+                <div class="fixed-head">
+                  <span class="ft-title">퀄리티 태그</span>
+                  <span class="ft-ctl-label">위치</span>
+                  <span class="seg" id="quality_pos_group">
+                    <button type="button" class="seg-btn active" data-pos="front" onclick="setFixedPos('quality', this)">맨앞</button>
+                    <button type="button" class="seg-btn" data-pos="back" onclick="setFixedPos('quality', this)">맨뒤</button>
+                  </span>
+                </div>
                 <input type="text" id="fixed_quality" class="cb-input"
                   placeholder="예: masterpiece, best quality, amazing quality"
-                  oninput="refreshFixedTags()" />
+                  oninput="onQualityInput()" />
+                <div class="tag-list" id="quality_badges" style="margin-top:8px;"></div>
               </div>
-              <div>
-                <label class="cb-label" style="font-size:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                  <span>작가 태그 <span style="color:var(--dim);">(맨 뒤)</span></span>
-                  <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); font-weight:normal;">
-                    접두사
-                    <span class="tone-group" id="artist_prefix_group" style="margin-top:0;">
-                      <button type="button" class="tone-btn active" data-prefix="" onclick="setArtistPrefix(this)">없음</button>
-                      <button type="button" class="tone-btn" data-prefix="@" onclick="setArtistPrefix(this)">@</button>
-                      <button type="button" class="tone-btn" data-prefix="artist:" onclick="setArtistPrefix(this)">artist:</button>
-                    </span>
+              <div style="margin-bottom: 14px;">
+                <div class="fixed-head">
+                  <span class="ft-title">작가 태그</span>
+                  <span class="ft-ctl-label">위치</span>
+                  <span class="seg" id="artist_pos_group">
+                    <button type="button" class="seg-btn" data-pos="front" onclick="setFixedPos('artist', this)">맨앞</button>
+                    <button type="button" class="seg-btn active" data-pos="back" onclick="setFixedPos('artist', this)">맨뒤</button>
                   </span>
-                </label>
-                <p style="font-size:11px; color:var(--dim); margin:0 0 8px; line-height:1.5;">
-                  가중치 1.0이면 <code>artist</code>, 아니면 <code>(artist:weight)</code> 형식으로 출력됩니다.
-                </p>
+                  <span class="ft-ctl-label">접두사</span>
+                  <span class="seg" id="artist_prefix_group">
+                    <button type="button" class="seg-btn active" data-prefix="" onclick="setArtistPrefix(this)">없음</button>
+                    <button type="button" class="seg-btn" data-prefix="@" onclick="setArtistPrefix(this)">@</button>
+                    <button type="button" class="seg-btn" data-prefix="artist:" onclick="setArtistPrefix(this)">artist:</button>
+                  </span>
+                </div>
                 <div id="artist_rows"></div>
                 <button type="button" class="add-char-btn" style="margin-top:8px;" onclick="addArtistRow()">+ 작가 추가</button>
+              </div>
+              <div class="fixed-head" style="margin-bottom:0;">
+                <span class="ft-ctl-label">두 태그가 같은 위치일 때 순서</span>
+                <span class="seg" id="fixed_priority_group">
+                  <button type="button" class="seg-btn active" data-priority="quality" onclick="setFixedPriority(this)">퀄리티 먼저</button>
+                  <button type="button" class="seg-btn" data-priority="artist" onclick="setFixedPriority(this)">작가 먼저</button>
+                </span>
               </div>
             </div>
           </details>
@@ -1235,10 +1293,49 @@
       let currentArtistPrefix = "";
       function setArtistPrefix(btn) {
         currentArtistPrefix = btn.dataset.prefix;
-        document.querySelectorAll("#artist_prefix_group .tone-btn").forEach((b) => {
+        document.querySelectorAll("#artist_prefix_group .seg-btn").forEach((b) => {
           b.classList.toggle("active", b === btn);
         });
         refreshFixedTags();
+      }
+      // 고정태그 위치(앞/뒤) + 우선순위. 기본: 퀄리티=앞, 작가=뒤, 우선순위=퀄리티.
+      let fixedPos = { quality: "front", artist: "back" };
+      let fixedPriority = "quality";   // 같은 위치일 때 누가 먼저 ("quality"/"artist")
+      function setFixedPos(which, btn) {
+        fixedPos[which] = btn.dataset.pos;
+        const grp = which === "quality" ? "#quality_pos_group" : "#artist_pos_group";
+        document.querySelectorAll(grp + " .seg-btn").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+        });
+        refreshFixedTags();
+      }
+      function setFixedPriority(btn) {
+        fixedPriority = btn.dataset.priority;
+        document.querySelectorAll("#fixed_priority_group .seg-btn").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+        });
+        refreshFixedTags();
+      }
+      // 가중치 표기: "local" => (tag:weight) / "nai" => weight::tag::
+      // 내부 상태(final_prompt, currentNlPhraseString)는 항상 로컬 표기로 저장하고,
+      // 표시/복사 시 formatTagWeight 에서만 변환한다(단일 진실원천).
+      let currentWeightSyntax = "local";
+      function setWeightSyntax(btn) {
+        currentWeightSyntax = btn.dataset.syntax;
+        document.querySelectorAll("#weight_syntax_group .seg-btn").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+        });
+        // 작가 weight 입력 하한도 표기에 맞춰 조정(NAI 음수 허용)
+        document.querySelectorAll("#artist_rows .artist-weight").forEach((inp) => {
+          inp.min = (currentWeightSyntax === "nai") ? "-10" : "0";
+        });
+        renderQualityBadges();   // 퀄리티 뱃지 표기 갱신
+        if (currentResultData && currentResultData.final_prompt) displayResults();
+        else if (currentNlPhraseString) renderNlPhraseBadges(currentNlPhraseString);
+      }
+      // 현재 표기의 가중치 하한(휠/입력 클램프용). NAI 는 음수 정식 지원.
+      function weightFloor() {
+        return (currentWeightSyntax === "nai") ? -10 : 0.1;
       }      let charBlockSeq = 0;
 
       // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
@@ -1477,7 +1574,7 @@
       }
 
       document.addEventListener("DOMContentLoaded", loadTagDescriptions);
-      document.addEventListener("DOMContentLoaded", () => addArtistRow());
+      document.addEventListener("DOMContentLoaded", () => { addArtistRow(); renderQualityBadges(); });
 
       // 글로벌 툴팁 JS 로직
       const globalTooltip = document.createElement('div');
@@ -1881,8 +1978,9 @@
             b.setAttribute("data-tooltip", "고정 태그 (LLM/DB 미경유, 치환·이스케이프 미적용)");
             finalContainer.appendChild(b);
           };
-          // 맨 앞: 퀄리티 고정 태그
-          parseFixedQuality().forEach(addFixedBadge);
+          // 앞 슬롯: 위치=맨앞으로 지정된 고정태그(우선순위순)
+          const { front: fixedFront, back: fixedBack } = fixedSlots();
+          fixedFront.forEach(addFixedBadge);
 
           // 퀄리티 뒤, DB 태그 앞: 패스스루(신규 캐릭터) 이름 배지.
           // DB를 못 뚫는 신규 캐릭터라 RAG 태그로는 안 나가므로 프론트에서 직접 끼운다.
@@ -1944,10 +2042,10 @@
             finalContainer.appendChild(el);
           });
 
-          // 맨 뒤: 작가 고정 태그
-          parseFixedArtist().forEach(addFixedBadge);
+          // 뒤 슬롯: 위치=맨뒤로 지정된 고정태그(우선순위순)
+          fixedBack.forEach(addFixedBadge);
 
-          if (tagsArray.length === 0 && parseFixedQuality().length === 0 && parseFixedArtist().length === 0) {
+          if (tagsArray.length === 0 && fixedFront.length === 0 && fixedBack.length === 0) {
             finalContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
           }
 
@@ -2108,10 +2206,60 @@
       }
 
       // ── 고정 태그 (LLM/DB 미경유, 프론트에서 앞뒤로 부착) ──
-      function parseFixedQuality() {
+      // 퀄리티 input 의 원시 토큰 배열(가중치 표기 포함, 로컬 (tag:w)). 진실원천.
+      function qualityTokens() {
         const raw = (document.getElementById("fixed_quality")?.value || "").trim();
         if (!raw) return [];
         return raw.split(",").map(t => t.trim()).filter(Boolean);
+      }
+      // 결과/복사용: 각 토큰에 현재 표기(로컬/NAI) 적용. (고정태그는 치환/이스케이프 미적용)
+      function parseFixedQuality() {
+        return qualityTokens().map((tok) => {
+          const { tag, weight } = parseTagWeight(tok);
+          return formatTagWeight(tag, weight);
+        });
+      }
+      // 퀄리티 input 변경 → 뱃지 재렌더 + 결과 갱신
+      function onQualityInput() {
+        renderQualityBadges();
+        refreshFixedTags();
+      }
+      // 퀄리티 태그를 뱃지로 렌더(휠 가중치). 가중치는 input 텍스트에 로컬 표기로 되쓴다.
+      function renderQualityBadges() {
+        const c = document.getElementById("quality_badges");
+        if (!c) return;
+        c.innerHTML = "";
+        const toks = qualityTokens();
+        toks.forEach((token, idx) => {
+          const el = document.createElement("span");
+          el.className = "tag deletable nl-phrase-badge";
+          const { tag, weight } = parseTagWeight(token);
+          el.textContent = formatTagWeight(tag, weight);  // 표시도 로컬/NAI 반영
+          if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
+          el.setAttribute("data-tooltip", "휠: 가중치 ±0.1 · 클릭: 삭제");
+          el.onclick = () => {
+            const t = qualityTokens();
+            t.splice(idx, 1);
+            document.getElementById("fixed_quality").value = t.join(", ");
+            onQualityInput();
+          };
+          el.addEventListener("wheel", (e) => {
+            e.preventDefault();
+            bumpQualityWeight(idx, e.deltaY < 0 ? 0.1 : -0.1);
+          }, { passive: false });
+          c.appendChild(el);
+        });
+      }
+      function bumpQualityWeight(idx, delta) {
+        const toks = qualityTokens();
+        if (idx < 0 || idx >= toks.length) return;
+        const { tag, weight } = parseTagWeight(toks[idx]);
+        let w = Math.round((weight + delta) * 10) / 10;
+        if (w < weightFloor()) w = weightFloor();
+        toks[idx] = _localWeightToken(tag, w);   // input 에는 항상 로컬 표기 저장
+        document.getElementById("fixed_quality").value = toks.join(", ");
+        renderQualityBadges();
+        refreshFixedTags();
       }
       let artistRowSeq = 0;
       function addArtistRow(name = "", weight = "1.0") {
@@ -2123,7 +2271,7 @@
         row.innerHTML = `
           <input type="text" class="cb-input artist-name" placeholder="작가명 (예: ratatatat74)"
             value="${name.replace(/"/g, "&quot;")}" oninput="refreshFixedTags()" />
-          <input type="number" class="cb-input artist-weight" step="0.1" min="0" value="${weight}"
+          <input type="number" class="cb-input artist-weight" step="0.1" min="${currentWeightSyntax === 'nai' ? '-10' : '0'}" value="${weight}"
             title="가중치 (1.0 = 기본)" oninput="refreshFixedTags()" />
           <button type="button" class="cb-remove artist-remove" title="삭제"
             onclick="removeArtistRow(${n})">×</button>
@@ -2147,9 +2295,8 @@
           const wRaw = row.querySelector(".artist-weight").value.trim();
           const w = parseFloat(wRaw);
           if (!isNaN(w) && Math.abs(w - 1.0) > 1e-9) {
-            // 1.0이 아니면 (artist:weight). 불필요한 0 제거(1.50→1.5)
-            const wStr = String(parseFloat(w.toFixed(4)));
-            out.push(`(${name}:${wStr})`);
+            // 1.0이 아니면 표기별 형식(로컬 (name:w) / NAI w::name::). formatTagWeight 로 통일.
+            out.push(formatTagWeight(name, w));
           } else {
             out.push(name);                              // 1.0이면 그대로
           }
@@ -2164,23 +2311,51 @@
       // final_prompt 문자열의 각 요소는 "tag" 또는 "(tag:1.2)" 형태일 수 있다.
       // 가중치 1.0 은 괄호 없이 "tag" 로 표기(기본값).
       const _WEIGHT_RE = /^\((.+):\s*(-?\d+(?:\.\d+)?)\)$/;
+      // NAI 표기 역파싱: weight::tag:: (중첩 오염 복구 포함)
+      const _NAI_WEIGHT_RE = /^(-?\d+(?:\.\d+)?)::([\s\S]+)::$/;
 
       function parseTagWeight(token) {
         // 반환: { tag, weight } — 가중치 없으면 weight=1.0
         const t = (token || "").trim();
-        const m = t.match(_WEIGHT_RE);
+        // 로컬 (tag:weight)
+        let m = t.match(_WEIGHT_RE);
         if (m) {
           const w = parseFloat(m[2]);
           return { tag: m[1].trim(), weight: isNaN(w) ? 1.0 : w };
         }
+        // NAI weight::tag:: — 내부 상태에 NAI 표기가 섞여 들어와도(또는 과거 오염
+        // 데이터) 역파싱해 휠 중첩 누적을 막는다. 최외곽 weight 채택, 중첩은 벗김.
+        m = t.match(_NAI_WEIGHT_RE);
+        if (m) {
+          const w = parseFloat(m[1]);
+          let inner = m[2];
+          let guard = 0, im;
+          while ((im = inner.match(_NAI_WEIGHT_RE)) && guard++ < 50) inner = im[2];
+          inner = inner.replace(/^(?:-?\d+(?:\.\d+)?::)+/, "").replace(/(?:::)+$/, "").trim();
+          return { tag: inner, weight: isNaN(w) ? 1.0 : w };
+        }
         return { tag: t, weight: 1.0 };
       }
 
-      function formatTagWeight(tag, weight) {
-        // 1.0 이면 tag 만, 아니면 (tag:weight). 소수 1자리로 고정.
+      // 저장 전용: 내부 상태는 표기 토글과 무관하게 항상 로컬 (tag:weight) 로 보관.
+      // 이래야 휠 재조절 시 parseTagWeight 가 안정적으로 역파싱한다(NAI 중첩 누적 방지).
+      function _localWeightToken(tag, weight) {
         const w = Math.round(weight * 10) / 10;
         if (Math.abs(w - 1.0) < 1e-9) return tag;
         return "(" + tag + ":" + w.toFixed(1) + ")";
+      }
+
+      function formatTagWeight(tag, weight) {
+        // 1.0 이면 tag 만(로컬·NAI 공통). 아니면 표기별 형식.
+        const w = Math.round(weight * 10) / 10;
+        if (Math.abs(w - 1.0) < 1e-9) return tag;
+        const wStr = w.toFixed(1);
+        if (currentWeightSyntax === "nai") {
+          // NAI 수치 강조: weight::tag:: (1.2::tag::, 음수 -1.0::tag:: 가능)
+          return wStr + "::" + tag + "::";
+        }
+        // 로컬(SD 계열): (tag:weight)
+        return "(" + tag + ":" + wStr + ")";
       }
 
       // final_prompt 문자열에 치환/이스케이프를 적용하되 가중치 표기는 보존한다.
@@ -2205,8 +2380,9 @@
         if (idx < 0 || idx >= tokens.length) return;
         const { tag, weight } = parseTagWeight(tokens[idx]);
         let w = Math.round((weight + delta) * 10) / 10;
-        if (w < 0.1) w = 0.1;          // 하한 0.1 (0 이하 불가)
-        tokens[idx] = formatTagWeight(tag, w);
+        if (w < weightFloor()) w = weightFloor();   // 로컬 하한 0.1 / NAI 음수 허용
+        // 내부 상태는 항상 로컬 표기로 저장(NAI 변환은 표시/복사 시 formatTagWeight 가).
+        tokens[idx] = _localWeightToken(tag, w);
         currentResultData.final_prompt = tokens.join(", ");
         syncFinalEditFromData();        // textarea 동기화
         displayResults();               // 뱃지 재렌더(가중치 표시 갱신)
@@ -2254,8 +2430,9 @@
         if (idx < 0 || idx >= tokens.length) return;
         const { tag, weight } = parseTagWeight(tokens[idx]);
         let w = Math.round((weight + delta) * 10) / 10;
-        if (w < 0.1) w = 0.1;
-        tokens[idx] = formatTagWeight(tag, w);
+        if (w < weightFloor()) w = weightFloor();
+        // 내부 상태는 항상 로컬 표기로 저장(표시 시 renderNlPhraseBadges 가 NAI 변환).
+        tokens[idx] = _localWeightToken(tag, w);
         renderNlPhraseBadges(tokens.join(", "));
       }
 
@@ -2405,12 +2582,27 @@
         });
       }
 
-      function withFixedTags(dbTagString) {
+      // 위치(앞/뒤)와 우선순위에 따라 고정태그(퀄리티/작가) 슬롯을 구성한다.
+      // 패스스루(신규 캐릭터)는 danbooru 블록 맨앞 붙박이라 mid 앞에 결합한다.
+      //   결과: [앞 슬롯(우선순위순)] + [패스스루 + danbooru] + [뒤 슬롯(우선순위순)]
+      function fixedSlots() {
         const q = parseFixedQuality();
         const a = parseFixedArtist();
-        const pt = passthroughForCopy();   // 퀄리티 뒤, DB 앞
+        // 우선순위: 같은 위치일 때 먼저 올 것을 앞에 둔다.
+        const order = fixedPriority === "artist"
+          ? [["artist", a], ["quality", q]]
+          : [["quality", q], ["artist", a]];
+        const front = [], back = [];
+        order.forEach(([which, tags]) => {
+          (fixedPos[which] === "back" ? back : front).push(...tags);
+        });
+        return { front, back };
+      }
+      function withFixedTags(dbTagString) {
+        const { front, back } = fixedSlots();
+        const pt = passthroughForCopy();   // danbooru 블록 맨앞 붙박이
         const mid = (dbTagString || "").split(", ").map(t => t.trim()).filter(Boolean);
-        return [...q, ...pt, ...mid, ...a].join(", ");
+        return [...front, ...pt, ...mid, ...back].join(", ");
       }
       // 고정 태그 입력이 바뀌면 결과 영역 다시 렌더
       function refreshFixedTags() {
