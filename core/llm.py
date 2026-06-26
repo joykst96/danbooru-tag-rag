@@ -133,6 +133,27 @@ RULES:
 
 
 # ---------------------------------------------------------------------------
+# 단어형(phrase) 보조 출력 — 자연어 칸 대체용
+# ---------------------------------------------------------------------------
+# 완전한 문장이 길어질수록 ANIMA 그림체가 흔들리는 문제 때문에, 문장 대신 짧은
+# 영어 구(phrase)를 콤마로 나열한다. 핵심: 이미 확정된 Danbooru 태그가 표현하지
+# '못한' 잔차(시각 디테일/분위기)만 담는다. 태그와 의미가 겹치면 안 된다.
+SYSTEM_PHRASE = """You write a SHORT comma-separated list of English phrases that COMPLEMENT a set of already-decided Danbooru tags for the ANIMA image model.
+
+The Danbooru tags already cover part of the user's Korean intent. Your job is to capture ONLY what those tags do NOT express — extra visual detail and mood/atmosphere implied by the Korean intent but missing from the tags.
+
+HARD RULES:
+1. Output ONLY short phrases separated by commas. NEVER write full sentences. No subject+verb clauses, no period-terminated sentences, no markdown, no bullets, no numbering.
+2. Each phrase is a few words at most (e.g. "wet cat ears", "soft rim light", "melancholic mood"). Noun phrases / adjective phrases only.
+3. Do NOT restate anything the given tags already express. If a tag already covers it, leave it out. No paraphrases of existing tags.
+4. Do NOT name characters or series. Character identity is already handled by the tags; never write "X from Y".
+5. Cover BOTH concrete visual details AND atmosphere/mood, as long as they are implied by the Korean intent and not already in the tags.
+6. Do not invent content unrelated to the Korean intent. Stay grounded in what the intent implies.
+7. English only. Output the bare comma-separated list and nothing else.
+8. You are also given the meaning each tag already covers (COVERED MEANINGS). Treat these strictly as an exclusion list: any visual detail or nuance listed there is ALREADY expressed by the tags, so you must NOT write a phrase for it. Use them only to avoid duplication, never as material to describe."""
+
+
+# ---------------------------------------------------------------------------
 # 자연어(NL) 톤 프리셋
 # ---------------------------------------------------------------------------
 # 사용자가 NL 프롬프트의 장황함을 조절한다. SYSTEM_NL / SYSTEM_NL_MULTI 의
@@ -615,5 +636,101 @@ async def generate_nl_multi(
     try:
         content = await _call(system, user, temp)
         return _strip_meta_leak(_strip_markdown(content))
+    except LLMError:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# 단어형(phrase) 보조 출력
+# ---------------------------------------------------------------------------
+PHRASE_TEMPERATURE = 0.25   # 잔차만 뽑으므로 낮게(결정적). plain(0.3)보다 더 보수적.
+
+
+def _phrase_key(s: str) -> str:
+    """phrase/태그 중복 비교용 정규화: 소문자 + 언더스코어/공백 통일."""
+    return re.sub(r'[\s_]+', ' ', s.lower()).strip()
+
+
+def _postprocess_phrases(content: str, final_tags: list[str]) -> str:
+    """
+    LLM 출력을 'a, b, c' 콤마 나열로 정규화하고 final_tags 와의 중복을 코드로 제거한다.
+
+    프롬프트가 중복 회피를 지시하지만 모델이 어길 수 있으므로(태그명을 그대로 뱉는 등),
+    여기서 문자열 차원의 중복(대소문자/언더스코어 차이 포함)을 마지막으로 보증한다.
+    """
+    content = re.sub(r'^```[\w]*\n?', '', content)
+    content = re.sub(r'\n?```$', '', content).strip()
+    tagkeys = {_phrase_key(t) for t in final_tags}
+    out: list[str] = []
+    seen: set[str] = set()
+    for piece in re.split(r'[,\n]', content):   # 콤마 또는 줄바꿈 구분
+        tok = piece.strip().strip('.;')
+        tok = re.sub(r'^[-*0-9.)\s]+', '', tok)  # 앞 불릿/번호 제거
+        tok = re.sub(r'\s+', ' ', tok).strip()
+        if not tok:
+            continue
+        k = _phrase_key(tok)
+        if k in tagkeys or k in seen:           # 태그 중복 / 내부 중복 제거
+            continue
+        seen.add(k)
+        out.append(tok)
+    return ", ".join(out)
+
+
+def _build_covered_meanings(final_tags: list[str], defs: dict[str, dict]) -> str:
+    """단어형+ 용: 최종 태그가 이미 커버하는 의미(definition/aliases/분류)를 텍스트로."""
+    lines: list[str] = []
+    for t in final_tags:
+        meta = defs.get(t)
+        if not meta:
+            continue
+        bits: list[str] = []
+        if meta.get("major") or meta.get("minor"):
+            bits.append("/".join(x for x in (meta["major"], meta["minor"]) if x))
+        if meta.get("definition"):
+            bits.append(meta["definition"])
+        if meta.get("aliases"):
+            bits.append(", ".join(meta["aliases"]))
+        if bits:
+            lines.append(f"- {t}: " + " | ".join(bits))
+    return "\n".join(lines)
+
+
+async def generate_phrase(
+    korean_prompt: str,
+    final_tags: list[str],
+    defs: dict[str, dict] | None = None,
+    temperature: float | None = None,
+) -> str:
+    """
+    [단어형 보조출력] 확정 태그가 표현 못 한 잔차를 짧은 영어 구로 나열.
+
+    완전한 문장(NL)이 길어질수록 그림체가 흔들리는 문제의 대안. NL 칸을 대체한다.
+    확정 태그의 의미 범위(COVERED MEANINGS)를 배제 목록으로 줘서, 태그가 이미
+    표현한 부분과 겹치지 않는 잔차(시각 디테일/분위기)만 뽑게 한다.
+
+    Args:
+        korean_prompt: 원본 한국어 의도.
+        final_tags:    3단계까지 확정된 최종 Danbooru 태그(중복 배제 기준).
+        defs:          get_definitions(variant) 결과(태그→의미). 배제 목록 구성에 사용.
+
+    실패 시 빈 문자열(보조 수단이라 전체를 막지 않음).
+    """
+    temp = PHRASE_TEMPERATURE if temperature is None else temperature
+
+    user_lines = [
+        f"Korean intent: {korean_prompt}",
+        f"Existing tags (do NOT restate these): {', '.join(final_tags)}",
+    ]
+    if defs:
+        covered = _build_covered_meanings(final_tags, defs)
+        if covered:
+            user_lines.append("COVERED MEANINGS (already expressed by the tags):")
+            user_lines.append(covered)
+    user = "\n".join(user_lines)
+
+    try:
+        content = await _call(SYSTEM_PHRASE, user, temp)
+        return _postprocess_phrases(_strip_markdown(content), final_tags)
     except LLMError:
         return ""

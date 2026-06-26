@@ -172,7 +172,8 @@ class GenerateRequest(BaseModel):
         default=None, description="검색 풀 카테고리(고급). None/빈값이면 일반(cat0)만"
     )
     nl_tone: str | None = Field(
-        default=None, description="자연어 톤: rich(기존)/plain(담백)/primitive(원시인). None이면 rich"
+        default=None,
+        description="자연어 톤: rich/plain. None이면 rich. 단어형 보조출력: phrase",
     )
 
 
@@ -197,7 +198,8 @@ class GenerateSplitRequest(BaseModel):
     background: str = Field(default="", description="배경/공통요소(한국어)")
     nl_temperature: float = Field(default=0.4)
     nl_tone: str | None = Field(
-        default=None, description="자연어 톤: rich/plain/primitive. None이면 rich"
+        default=None,
+        description="자연어 톤: rich/plain. None이면 rich. 단어형 보조출력: phrase",
     )
 
 

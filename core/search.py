@@ -37,6 +37,10 @@ CHAR_ONLY_CATS = {4}      # 캐릭터
 # variant별 '실존 태그 집합' 캐시 (환각 차단 코드필터용)
 _tagset_cache: dict[str, set[str]] = {}
 
+# variant별 '태그 → 메타데이터' 캐시 (단어형+ 의 중복회피/생성보강용)
+#   {tag: {"definition","aliases","major","minor"}}. tagset 과 동일한 lazy 패턴.
+_definitions_cache: dict[str, dict[str, dict]] = {}
+
 
 def get_db(variant: str) -> TagDatabase:
     """variant에 해당하는 DB 인스턴스를 캐싱하여 반환."""
@@ -59,6 +63,38 @@ def get_tagset(variant: str) -> set[str]:
         _tagset_cache[variant] = set(df["tag"].tolist())
         logger.info(f"태그집합 로드 (variant={variant}): {len(_tagset_cache[variant])}개")
     return _tagset_cache[variant]
+
+
+def get_definitions(variant: str) -> dict[str, dict]:
+    """
+    variant DB의 '태그 → 한국어 메타데이터' 매핑. (1회 로드 후 캐시)
+
+    단어형+ 가 최종 태그의 의미 범위(definition/aliases/대·소분류)를 알아야
+    "이미 태그가 커버한 부분"을 단어형에서 제외(또는 보강)할 수 있다.
+    e5 임베딩/벡터검색을 타지 않는 순수 테이블 덤프이며, get_tagset 과 동일하게
+    첫 호출 1회만 LanceDB 를 읽고 이후엔 메모리 dict 조회다(단일워커+큐로 직렬화).
+
+    반환: {tag: {"definition": str, "aliases": list[str], "major": str, "minor": str}}
+    """
+    if variant not in _definitions_cache:
+        tbl = get_db(variant).table
+        df = tbl.to_pandas()
+        mapping: dict[str, dict] = {}
+        for row in df.itertuples(index=False):
+            # aliases 는 list 컬럼이라 to_pandas → itertuples 에서 numpy ndarray 로
+            # 올 수 있다. `arr or []` 는 다중원소 array 의 truth value 가 모호해 터지므로
+            # (ValueError: ambiguous), or 를 쓰지 말고 None 만 분기해 list() 로 감싼다.
+            _al = getattr(row, "aliases", None)
+            aliases = list(_al) if _al is not None else []
+            mapping[row.tag] = {
+                "definition": getattr(row, "definition", "") or "",
+                "aliases": aliases,
+                "major": getattr(row, "major", "") or "",
+                "minor": getattr(row, "minor", "") or "",
+            }
+        _definitions_cache[variant] = mapping
+        logger.info(f"definition 맵 로드 (variant={variant}): {len(mapping)}개")
+    return _definitions_cache[variant]
 
 
 def filter_existing_tags(tags: list[str], variant: str) -> tuple[list[str], list[str]]:

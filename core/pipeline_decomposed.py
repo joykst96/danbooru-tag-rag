@@ -138,6 +138,29 @@ def _strip_units(units: list[str], names: list[str]) -> list[str]:
     return out
 
 
+async def _generate_nl_or_phrase(
+    korean_prompt: str,
+    kept: list[str],
+    en_units: list[str],
+    nl_tone: str | None,
+    variant: str,
+) -> str:
+    """
+    4단계 출력 분기: 일반 톤이면 자연어 문장, "phrase"면 단어형 보조출력.
+
+    단어형(UI '단어형+')은 확정 태그(kept)가 표현 못 한 잔차만 짧은 영어 구로 낸다.
+    중복 배제 기준이 kept 이므로 nl_basis(kept or en_units)가 아니라 kept 를 그대로
+    넘긴다(태그가 비면 배제할 것도 없어 일반 흐름과 동일하게 빈약해짐). 태그의 의미
+    범위(definition)를 배제맥락으로 함께 준다.
+    """
+    if nl_tone == "phrase":
+        defs = search_mod.get_definitions(variant)
+        return await llm.generate_phrase(korean_prompt, kept, defs=defs)
+    # 일반 자연어(rich/plain): 태그가 비면 영어 분해단위로 폴백.
+    nl_basis = kept or en_units
+    return await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
+
+
 async def run_decomposed_pipeline(
     korean_prompt: str,
     general_variant: str = "c",
@@ -194,8 +217,9 @@ async def run_decomposed_pipeline(
     # ── 호출 4: 자연어 프롬프트 (최종 태그 + 원본) ──
     # 환각 필터를 거친 final_tags 기준으로 생성(없는 태그가 NL에 새지 않게).
     if generate_nl:
-        nl_basis = res.final_tags or res.en_units
-        res.nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
+        res.nl_prompt = await _generate_nl_or_phrase(
+            korean_prompt, res.final_tags, res.en_units, nl_tone, en_variant
+        )
 
     return res
 
@@ -296,11 +320,12 @@ async def stream_decomposed_pipeline(
         "data": {"final_tags": kept, "hallucinated": hallucinated},
     }
 
-    # ── 4단계: 자연어 프롬프트 ──
+    # ── 4단계: 자연어 프롬프트 (또는 단어형 보조출력) ──
     nl_prompt = ""
     if generate_nl:
-        nl_basis = kept or en_units
-        nl_prompt = await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
+        nl_prompt = await _generate_nl_or_phrase(
+            korean_prompt, kept, en_units, nl_tone, en_variant
+        )
     yield {
         "stage": "nl",
         "status": "완료",
