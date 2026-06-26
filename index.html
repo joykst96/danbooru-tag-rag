@@ -1010,11 +1010,16 @@
                   oninput="refreshFixedTags()" />
               </div>
               <div>
-                <label class="cb-label" style="font-size:12px; display:flex; align-items:center; gap:10px;">
+                <label class="cb-label" style="font-size:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                   <span>작가 태그 <span style="color:var(--dim);">(맨 뒤)</span></span>
-                  <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--dim); cursor:pointer; font-weight:normal;">
-                    <input type="checkbox" class="switch switch-sm" id="fixed_artist_at" onchange="refreshFixedTags()" /> @접두사 붙이기
-                  </label>
+                  <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); font-weight:normal;">
+                    접두사
+                    <span class="tone-group" id="artist_prefix_group" style="margin-top:0;">
+                      <button type="button" class="tone-btn active" data-prefix="" onclick="setArtistPrefix(this)">없음</button>
+                      <button type="button" class="tone-btn" data-prefix="@" onclick="setArtistPrefix(this)">@</button>
+                      <button type="button" class="tone-btn" data-prefix="artist:" onclick="setArtistPrefix(this)">artist:</button>
+                    </span>
+                  </span>
                 </label>
                 <p style="font-size:11px; color:var(--dim); margin:0 0 8px; line-height:1.5;">
                   가중치 1.0이면 <code>artist</code>, 아니면 <code>(artist:weight)</code> 형식으로 출력됩니다.
@@ -1225,7 +1230,16 @@
       let currentNlTone = "rich";   // 자연어 톤 프리셋 (rich/plain)
       // 단어형+(phrase) 뱃지의 현재 가중치 문자열. danbooru final_prompt 와 분리해
       // NL 박스만 갱신한다(서로 오염 방지). 빈 문자열이면 뱃지 모드 아님.
-      let currentNlPhraseString = "";      let charBlockSeq = 0;
+      let currentNlPhraseString = "";
+      // 작가 태그 접두사: "" (없음) / "@" / "artist:"
+      let currentArtistPrefix = "";
+      function setArtistPrefix(btn) {
+        currentArtistPrefix = btn.dataset.prefix;
+        document.querySelectorAll("#artist_prefix_group .tone-btn").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+        });
+        refreshFixedTags();
+      }      let charBlockSeq = 0;
 
       // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
       let directClickMode = "copy";
@@ -2122,14 +2136,14 @@
         refreshFixedTags();
       }
       function parseFixedArtist() {
-        const at = document.getElementById("fixed_artist_at")?.checked;
+        const prefix = currentArtistPrefix || "";   // "" / "@" / "artist:"
         const rows = document.querySelectorAll("#artist_rows .artist-row");
         const out = [];
         rows.forEach((row) => {
           let name = row.querySelector(".artist-name").value.trim();
           if (!name) return;
-          name = name.replace(/^@/, "");                 // 입력에 @ 있으면 일단 떼고
-          if (at) name = "@" + name;                     // 접두사 옵션이면 다시 붙임(가중치 안으로)
+          name = name.replace(/^(@|artist:)/, "");       // 입력에 기존 접두사 있으면 일단 떼고
+          if (prefix) name = prefix + name;              // 선택한 접두사 붙임(가중치 안으로)
           const wRaw = row.querySelector(".artist-weight").value.trim();
           const w = parseFloat(wRaw);
           if (!isNaN(w) && Math.abs(w - 1.0) > 1e-9) {
