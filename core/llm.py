@@ -120,15 +120,16 @@ Describe each character in its own SEPARATE sentence. Do NOT pack multiple chara
 
 RULES:
 1. Write each character as its own clause/sentence: "<Name> from <Series>, with <appearance woven from the tags>, ...". If a character has a series, include it once.
-2. If a block has a name but NO matched tags, still use the name and describe whatever the block's description implies — do not drop the character.
-3. If a block is marked original_character=true, it has no canon name. Invent a simple fitting first name for that character and use it the same way (name first, then appearance). This gives the model a stable handle so it does not confuse this character with others.
+2. If a block has a name but NO matched tags, still use the name and describe whatever the block's description implies — do not drop the character. A block marked with the [new] flag is a new/unlisted character: use its given name as-is as the character handle even though no canon tags matched.
+3. If a block is marked with the [original] flag, it has no canon name. Invent a simple fitting first name for that character and use it the same way (name first, then appearance). This gives the model a stable handle so it does not confuse this character with others.
 4. If a block has NO name and is not original, use a plain noun ("A girl", "A boy", "A figure") consistent with the description, then the appearance.
 5. Keep every character visually distinct so the model can separate them. Do not merge two characters' attributes into the same sentence.
 6. End with the background/setting as a shared clause if a BACKGROUND block is given.
 7. Use standard capitalization for character/series names. Do not add attributes that are not in the given tags/description.
 8. SOURCE STRUCTURE (always preserved, regardless of tone): whenever a character has a series, keep the "<Character> from <Series>" structure intact (e.g. "Fern from Sousou no Frieren"). The linking word "from" must never be dropped or replaced, even under a compressed tone. Tone may shorten the appearance description, but not this name-to-series link.
 {TONE_RULES}
-9. Return ONLY the raw prompt text. No markdown, no headings, no explanations."""
+9. Return ONLY the raw prompt text. No markdown, no headings, no explanations.
+10. NEVER copy the input's structural labels into the prompt. The input uses labels like "CHARACTER 1:", "BACKGROUND:", name=, series=, tags=, description=, original_character=true, "(new/unlisted character ...)", and bracket flags such as [original]/[new]. These are instructions to you, NOT words to write. The output must read as a natural scene description with no key=value pairs, no block headers, and no parenthetical meta-notes about a character being original or unlisted."""
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,37 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r'^```[\w]*\n?', '', text)
     text = re.sub(r'\n?```$', '', text)
     return text.strip().strip('"')
+
+
+# generate_nl_multi 입력에 쓰는 메타 라벨/플래그가 NL 출력에 그대로 베껴
+# 나오는 누수를 후처리로 제거한다(3중 방어의 마지막 safety net). 새 누수 표현이
+# 발견되면 이 목록에 패턴을 추가한다.
+_META_LEAK_PATTERNS = [
+    re.compile(r'\bCHARACTER\s*\d*\s*:', re.IGNORECASE),     # 블록 헤더
+    re.compile(r'\bBACKGROUND\s*:', re.IGNORECASE),
+    # key="value" / key=[...] / key=true 형태 라벨
+    re.compile(r'\b(?:name|series|tags|description)\s*=\s*'
+               r'(?:"[^"]*"|\[[^\]]*\]|true|false)', re.IGNORECASE),
+    # 장황 라벨/괄호 안내문
+    re.compile(r'original_character\s*=\s*true\s*(?:\([^)]*\))?', re.IGNORECASE),
+    re.compile(r'\(\s*(?:new|unlisted)[^)]*character[^)]*\)', re.IGNORECASE),
+    re.compile(r'\(\s*no\s+canon\s+name[^)]*\)', re.IGNORECASE),
+    re.compile(r'\(\s*new/unlisted[^)]*\)', re.IGNORECASE),
+    # 단축 플래그(입력에서 쓰는 형태)
+    re.compile(r'\[\s*(?:original|new|unlisted|passthrough)\s*\]', re.IGNORECASE),
+]
+
+
+def _strip_meta_leak(text: str) -> str:
+    """입력 메타 라벨이 NL 에 누수된 경우 제거하고 잔여 구두점/공백을 정리한다."""
+    for pat in _META_LEAK_PATTERNS:
+        text = pat.sub(' ', text)
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    text = re.sub(r'\s+([,.;:])', r'\1', text)
+    text = re.sub(r'([,;:])\s*\1+', r'\1', text)
+    text = re.sub(r'^\s*[,;:.]+\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip().strip(',;:').strip()
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +581,9 @@ async def generate_nl_multi(
         parts = [f"CHARACTER {i}:"]
         if ch.get("is_original"):
             # 오리지널 캐릭터: 작품/캐릭터명 없음. LLM이 임의 이름을 지어 붙인다.
-            parts.append("original_character=true (no canon name — invent a fitting name)")
+            # 단축 플래그로 전달(장황 안내문이 NL 에 베껴지는 누수 방지). 의미는
+            # SYSTEM_NL_MULTI RULE 3/10 이 정의한다.
+            parts.append("[original]")
         else:
             if ch.get("name"):
                 parts.append(f'name="{ch["name"]}"')
@@ -558,7 +592,8 @@ async def generate_nl_multi(
             if ch.get("is_passthrough"):
                 # 패스스루: DB에 아직 없는 신규 캐릭터를 사용자가 직접 지정.
                 # 매칭된 캐릭터 태그가 없어도 이 이름을 그대로 캐릭터 핸들로 써야 한다.
-                parts.append("(new/unlisted character — use this name as-is as the character handle)")
+                # 단축 플래그로 전달(안내문 누수 방지). 의미는 RULE 2/10 이 정의한다.
+                parts.append("[new]")
         if ch.get("tags"):
             parts.append(f'tags=[{", ".join(ch["tags"])}]')
         if ch.get("desc"):
@@ -579,6 +614,6 @@ async def generate_nl_multi(
     user = "\n".join(lines)
     try:
         content = await _call(system, user, temp)
-        return _strip_markdown(content)
+        return _strip_meta_leak(_strip_markdown(content))
     except LLMError:
         return ""
