@@ -54,14 +54,16 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 자연어 프롬프트의 장황함을 프리셋으로 조절합니다(온도는 톤에 맞춰 자동 설정, 이후 직접 미세조정 가능).
 
 - **묘사적**: 2문장 이상, 유려한 묘사.
-- **담백**: 수식어 없이 정보만, 짧고 직접적인 문장.
+- **담백**: 수식어 없이 정보만, 짧고 직접적인 문장. 입력은 확정 태그가 아니라 DB 수렴 전 영어 분해단위를 받아, 태그로 수렴하며 잘려나간 의미를 복원합니다(캐릭터 정체성은 보존).
+- **단어형+**: 문장 대신 짧은 영어 구를 쉼표로 나열합니다. 문장이 길수록 그림체가 흔들리는 문제의 대안으로, 확정 태그가 표현하지 못한 잔차(시각 디테일·명시된 분위기)만 담고 태그와 중복되지 않습니다. 태그의 의미 범위(definition)를 배제맥락으로 LLM에 줘 중복을 줄입니다. 출력은 결과 영역에서 뱃지로 표시되며 휠로 가중치를 줄 수 있습니다.
 
 캐릭터 태그가 있으면 자연어가 `<캐릭터> from <작품>, ...` 형식으로 시작합니다(작품이 있을 때). 출처 구조는 톤과 무관하게 보존됩니다.
 
-### 고정 태그 / 태그 편집
+### 가중치 표기 / 고정 태그 / 태그 편집
 
-- **고정 태그**: 퀄리티 태그(맨 앞)·작가 태그(맨 뒤)를 LLM·DB를 거치지 않고 결과 앞뒤에 그대로 붙입니다. 작가 태그는 가중치(`(artist:weight)`)와 `@` 접두사 옵션을 지원합니다. 고정 태그는 언더스코어 치환·괄호 이스케이프를 받지 않습니다.
-- **결과 태그 직접 편집**: Danbooru 태그를 textarea에서 직접 수정할 수 있습니다(배지와 양방향 동기화). DB 태그 배지는 마우스 휠로 가중치(`(tag:weight)`, 0.1 단위, 하한 0.1)를 조절합니다. 1.0이면 태그만, 그 외엔 `(tag:weight)`로 출력됩니다.
+- **가중치 표기(로컬 / NAI)**: 모든 가중치를 로컬(`(tag:weight)`) 또는 NAI(`weight::tag::`) 형식으로 출력합니다. NAI는 음수 가중치를 지원합니다(하한 -10). 내부 상태는 항상 로컬 표기로 저장하고 표시·복사 시에만 변환하므로, 휠 재조절 시 표기가 중첩되지 않습니다.
+- **고정 태그**: 퀄리티·작가 태그를 LLM·DB를 거치지 않고 결과에 그대로 붙입니다. 퀄리티·작가 각각 **맨앞/맨뒤 위치**를 독립으로 고르고, 둘이 같은 위치면 **우선순위**(퀄리티/작가 먼저)로 순서를 정합니다. 출력 순서는 `[앞 고정] + [패스스루 + Danbooru 태그] + [뒤 고정]`입니다. 퀄리티·작가 태그 모두 뱃지로 표시되며 휠로 가중치를 조절합니다. 작가 태그는 `없음/@/artist:` 접두사를 지원합니다. 고정 태그는 언더스코어 치환·괄호 이스케이프를 받지 않습니다.
+- **결과 태그 직접 편집**: Danbooru 태그를 textarea에서 직접 수정할 수 있습니다(배지와 양방향 동기화). DB 태그 배지는 마우스 휠로 가중치(0.1 단위)를 조절합니다. 1.0이면 태그만, 그 외엔 현재 표기(로컬/NAI)로 출력됩니다.
 
 ### 로그
 
@@ -158,9 +160,11 @@ Key structures: a **two-way DB split** (general vs character/series) to stop cha
 
 **Advanced split mode**: per-character fields + background. Each character picks a **source** of three: *DB lookup* (LLM picks character/series tags from DB candidates by user intent; series tags feed inference/NL only, not the final output), *unlisted character (passthrough)* (skips DB search, uses the typed name verbatim in NL and at the front of the tags), or *original* (skips search, NL invents a name). Character names in the description/background fields are stripped to avoid `_(cosplay)` pollution.
 
-**Natural-language tone** presets (descriptive / plain) control verbosity, with temperature auto-set per tone. When a character tag is present, NL opens with `<Character> from <Series>, ...`; the source structure is preserved regardless of tone.
+**Natural-language tone** presets control verbosity, with temperature auto-set per tone. *Descriptive* writes two or more flowing sentences; *plain* gives short, modifier-free sentences and is fed the pre-convergence English decomposition units (not the final tags) to recover meaning lost during tag convergence, while preserving character identity; *phrase+* emits a comma-separated list of short English phrases instead of sentences — an alternative for when longer prose destabilizes the art style — carrying only the residual (visual detail and explicitly-stated mood) the tags don't express, with each tag's covered meaning given to the LLM as an exclusion context. When a character tag is present, NL opens with `<Character> from <Series>, ...`; the source structure is preserved regardless of tone.
 
-**Fixed tags** (quality first, artists last with `(artist:weight)` and optional `@` prefix) bypass the LLM/DB and are appended verbatim. Result tags are editable in a textarea (two-way synced with badges); DB-tag badges support mouse-wheel weight adjustment.
+**Weight syntax (local / NAI)**: all weights render as local `(tag:weight)` or NAI `weight::tag::`; NAI supports negative weights (floor -10). State is always stored in local form and converted only on display/copy, so repeated wheel adjustments never nest the notation.
+
+**Fixed tags** (quality and artists) bypass the LLM/DB and are appended verbatim. Quality and artists each independently choose a **front/back position**; when both share a side, a **priority** toggle (quality/artist first) sets the order. Output order is `[front fixed] + [passthrough + Danbooru tags] + [back fixed]`. Both quality and artist tags render as badges with mouse-wheel weight adjustment; artists support a `none/@/artist:` prefix. Result tags are editable in a textarea (two-way synced with badges).
 
 ### Index variant
 
