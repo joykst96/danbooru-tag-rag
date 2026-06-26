@@ -613,6 +613,12 @@
         box-shadow: inset 0 0 0 1px var(--accent);
         font-weight: 600;
       }
+      /* 단어형+ 뱃지: 키워드 뱃지 스타일(카테고리 색 미적용). 휠 가중치 강조만. */
+      .tag.nl-phrase-badge.weighted {
+        border-color: var(--dim);
+        box-shadow: inset 0 0 0 1px var(--dim);
+        font-weight: 600;
+      }
       /* 가중치 조절 중에도 삭제 hover와 구분되도록, weighted hover는 line-through 유지 */
       /* Danbooru 태그 직접 편집 textarea */
       .final-edit {
@@ -1217,7 +1223,9 @@
       // ── 입력 모드 (기본 한문장 / 고급 인물분할) ──
       let currentMode = "basic";
       let currentNlTone = "rich";   // 자연어 톤 프리셋 (rich/plain)
-      let charBlockSeq = 0;
+      // 단어형+(phrase) 뱃지의 현재 가중치 문자열. danbooru final_prompt 와 분리해
+      // NL 박스만 갱신한다(서로 오염 방지). 빈 문자열이면 뱃지 모드 아님.
+      let currentNlPhraseString = "";      let charBlockSeq = 0;
 
       // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
       let directClickMode = "copy";
@@ -1829,7 +1837,16 @@
         const nlPromptBox = document.getElementById("nl_prompt_box");
         if (data.english_prompt) {
           nlPromptBox.style.display = "block";
-          document.getElementById("res_nl_prompt").textContent = data.english_prompt;
+          // 단어형+(phrase)는 danbooru 그리드처럼 뱃지 + 휠 가중치로 렌더.
+          // 그 외 톤(rich/plain)은 기존대로 평문 문장.
+          if (currentNlTone === "phrase") {
+            renderNlPhraseBadges(data.english_prompt);
+          } else {
+            currentNlPhraseString = "";
+            const nlEl = document.getElementById("res_nl_prompt");
+            nlEl.classList.remove("tag-list");
+            nlEl.textContent = data.english_prompt;
+          }
         } else {
           nlPromptBox.style.display = "none";
         }
@@ -2181,6 +2198,53 @@
         displayResults();               // 뱃지 재렌더(가중치 표시 갱신)
       }
 
+      // 단어형+(phrase) 출력을 danbooru 그리드처럼 뱃지로 렌더한다.
+      // danbooru 와 차이: 카테고리 색(tag-cat-N) 미적용(키워드 뱃지 스타일), 가중치
+      // 상태는 currentNlPhraseString 에만 저장(final_prompt 와 분리).
+      function renderNlPhraseBadges(phraseString) {
+        currentNlPhraseString = phraseString || "";
+        const c = document.getElementById("res_nl_prompt");
+        c.classList.add("tag-list");
+        c.innerHTML = "";
+        const tokens = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
+        if (tokens.length === 0) {
+          c.innerHTML = '<span style="color: var(--dim); font-size: 13px;">생성된 구가 없습니다.</span>';
+          return;
+        }
+        tokens.forEach((token, idx) => {
+          const el = document.createElement("span");
+          el.className = "tag deletable nl-phrase-badge";
+          const { tag: core, weight } = parseTagWeight(token);
+          el.textContent = formatTagWeight(core, weight);  // 구는 치환/이스케이프 미적용(자연어)
+          if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
+          el.setAttribute("data-tooltip", "휠: 가중치 ±0.1 · 클릭: 삭제");
+          // 클릭 삭제 (위치 기반)
+          el.onclick = () => {
+            const toks = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
+            toks.splice(idx, 1);
+            renderNlPhraseBadges(toks.join(", "));
+          };
+          // 휠 가중치 (호버 중)
+          el.addEventListener("wheel", (e) => {
+            e.preventDefault();
+            bumpNlPhraseWeight(idx, e.deltaY < 0 ? 0.1 : -0.1);
+          }, { passive: false });
+          c.appendChild(el);
+        });
+      }
+
+      // 단어형+ 뱃지의 가중치를 delta(±0.1)만큼 조절. final_prompt 와 무관하게
+      // currentNlPhraseString 만 갱신 후 재렌더.
+      function bumpNlPhraseWeight(idx, delta) {
+        const tokens = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
+        if (idx < 0 || idx >= tokens.length) return;
+        const { tag, weight } = parseTagWeight(tokens[idx]);
+        let w = Math.round((weight + delta) * 10) / 10;
+        if (w < 0.1) w = 0.1;
+        tokens[idx] = formatTagWeight(tag, w);
+        renderNlPhraseBadges(tokens.join(", "));
+      }
+
       // final_prompt(데이터) → textarea 표시. textarea 는 DB 태그만(고정태그 제외).
       function syncFinalEditFromData() {
         const ta = document.getElementById("final_prompt_edit");
@@ -2349,6 +2413,9 @@
             currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
           );
           text = withFixedTags(dbTags);
+        } else if (elementId === "res_nl_prompt" && currentNlTone === "phrase" && currentNlPhraseString) {
+          // 단어형+ 뱃지 모드: textContent(뱃지 텍스트)가 아니라 가중치 문자열을 복사.
+          text = currentNlPhraseString;
         } else {
           text = document.getElementById(elementId).textContent;
         }
@@ -2381,7 +2448,10 @@
           currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
         );
         let finalTags = withFixedTags(dbTags);
-        const nlPrompt = document.getElementById("res_nl_prompt").textContent.trim();
+        // 단어형+ 뱃지 모드면 가중치 문자열, 아니면 평문 textContent.
+        const nlPrompt = (currentNlTone === "phrase" && currentNlPhraseString)
+          ? currentNlPhraseString.trim()
+          : document.getElementById("res_nl_prompt").textContent.trim();
         
         let combined = "";
         if (finalTags && finalTags !== "매칭된 태그가 없습니다." && nlPrompt) {
