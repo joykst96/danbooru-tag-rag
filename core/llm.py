@@ -170,12 +170,18 @@ NL_TONES = {
         ),
     },
     "plain": {
-        "temperature": 0.3,
+        "temperature": 0.35,
         "rules": (
-            "TONE: Keep it plain and factual. State only what the keywords say, in simple sentences. "
-            "Do NOT add decorative adjectives or mood words (no 'beautiful', 'cute', 'gorgeous', "
-            "'stunning', 'elegant', 'delicate', 'ethereal', 'breathtaking', 'mesmerizing', etc.). "
-            "No metaphors, no scene-setting beyond the given keywords. Short, direct sentences. "
+            "TONE: Plain and factual, but STILL WRITE REAL SENTENCES — this is the most "
+            "important rule for this tone. Weave the keywords into one or more complete English "
+            "sentences with subjects and verbs (e.g. 'A girl leans against a wall, glancing around "
+            "warily as she checks her surroundings.'). "
+            "NEVER output the keywords as a comma-separated list or a string of bare fragments — "
+            "that defeats the purpose; the result must read as prose, not as tags. "
+            "Keep it restrained: do NOT add decorative adjectives or mood words (no 'beautiful', "
+            "'cute', 'gorgeous', 'stunning', 'elegant', 'delicate', 'ethereal', 'breathtaking', "
+            "'mesmerizing', etc.), no metaphors, and no scene-setting beyond what the keywords imply. "
+            "Simple, direct sentences are good — but they must be sentences. "
             "Still keep any '<Character> from <Series>' source structure intact."
         ),
     },

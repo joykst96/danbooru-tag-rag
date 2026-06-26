@@ -144,19 +144,33 @@ async def _generate_nl_or_phrase(
     en_units: list[str],
     nl_tone: str | None,
     variant: str,
+    char_tags: list[str] | None = None,
 ) -> str:
     """
     4단계 출력 분기: 일반 톤이면 자연어 문장, "phrase"면 단어형 보조출력.
 
     단어형(UI '단어형+')은 확정 태그(kept)가 표현 못 한 잔차만 짧은 영어 구로 낸다.
-    중복 배제 기준이 kept 이므로 nl_basis(kept or en_units)가 아니라 kept 를 그대로
-    넘긴다(태그가 비면 배제할 것도 없어 일반 흐름과 동일하게 빈약해짐). 태그의 의미
-    범위(definition)를 배제맥락으로 함께 준다.
+    중복 배제 기준이 kept 이므로 kept 를 그대로 넘기고, 태그의 의미 범위(definition)를
+    배제맥락으로 함께 준다.
+
+    톤별 입력(NL 의 목적은 'tag 수렴 과정에서 잘려나간 손실 복구'):
+      - rich  : kept(최종 태그) 기반. 정합성 우선, 묘사적.
+      - plain : en_units(DB 통과 전 영어 분해단위) 기반. kept 를 받으면 손실된 결과를
+                받아 손실을 복구하라는 모순이 되므로, 수렴 전 정보를 입력으로 준다.
+                단 캐릭터 정체성은 en_units 에서 strip 되므로(char_names 제거됨)
+                char_tags 를 앞에 보존해 SYSTEM_NL RULE2 의 'X from Y' 오프닝을 살린다.
+                en_units 가 비면 kept 로 폴백.
     """
     if nl_tone == "phrase":
         defs = search_mod.get_definitions(variant)
         return await llm.generate_phrase(korean_prompt, kept, defs=defs)
-    # 일반 자연어(rich/plain): 태그가 비면 영어 분해단위로 폴백.
+    if nl_tone == "plain":
+        # 수렴 전 영어 분해단위 + 캐릭터 태그(정체성). en_units 비면 kept 폴백.
+        basis = en_units or kept
+        if char_tags:
+            basis = char_tags + [t for t in basis if t not in char_tags]
+        return await llm.generate_nl_prompt(korean_prompt, basis, tone=nl_tone)
+    # rich(및 기타): 최종 태그 기반. 태그가 비면 영어 분해단위로 폴백.
     nl_basis = kept or en_units
     return await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
 
@@ -324,7 +338,8 @@ async def stream_decomposed_pipeline(
     nl_prompt = ""
     if generate_nl:
         nl_prompt = await _generate_nl_or_phrase(
-            korean_prompt, kept, en_units, nl_tone, en_variant
+            korean_prompt, kept, en_units, nl_tone, en_variant,
+            char_tags=char_tags,
         )
     yield {
         "stage": "nl",
