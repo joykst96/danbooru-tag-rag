@@ -62,7 +62,8 @@ Read the WHOLE Korean sentence for context, then output English search units —
 RULES:
 1. Translate using the full sentence context, not word-by-word. "허리까지 오는 구도" → "waist up" (framing), not "to the waist".
 2. One unit = one attribute. Split compounds, but keep a phrase together if splitting loses meaning ("dragon horns on both sides of head").
-3. Person count and relations are their own units ("2girls", "1boy", "surrounded").
+3. Person count and relations are their own units. Use DANBOORU count conventions ONLY: females (woman/girl/lady, any age) → "1girl"/"2girls"/"3girls"/"6+girls"; males → "1boy"/"2boys"; mixed or non-binary → "1other". NEVER output "1woman"/"1man"/"1person" — those are not Danbooru tags. ("여성"/"여자"/"소녀" all map to girl tags, "남성"/"남자"/"소년" to boy tags.) Relation words like "surrounded" stay as their own unit.
+3a. MATURITY is a SEPARATE unit from count, not a replacement. The count tag stays "1girl"/"1boy"; if the subject is described as mature/adult/older, ALSO emit a separate maturity unit: mature woman → "1girl" + "mature_female"; mature man → "1boy" + "mature_male". ("성숙한 여성"/"성인 여성"/"어른 여성" → ["1girl", "mature_female"]; "성숙한 남성" → ["1boy", "mature_male"].) Plain "여성"/"남성" without a maturity cue → just "1girl"/"1boy", no maturity tag.
 4. Keep named characters/series as single units in their common English form.
 5. Drop pure filler with no visual meaning.
 

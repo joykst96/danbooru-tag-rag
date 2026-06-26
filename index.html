@@ -635,6 +635,54 @@
         border-color: var(--accent);
       }
       .final-edit::placeholder { color: var(--dim); }
+      /* ── 자동완성 드롭다운 ── */
+      .ac-wrap { position: relative; }
+      .ac-dropdown {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        margin-top: 2px;
+        z-index: 50;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        /* 5개까지 보이고(약 34px*5) 나머지는 스크롤로 20개까지 */
+        max-height: 170px;
+        overflow-y: auto;
+        /* 스크롤바 숨김 (Firefox / IE) */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      /* 스크롤바 숨김 (WebKit) */
+      .ac-dropdown::-webkit-scrollbar { width: 0; height: 0; display: none; }
+      .ac-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        height: 34px;
+        box-sizing: border-box;
+        border-bottom: 1px solid var(--border);
+      }
+      .ac-item:last-child { border-bottom: none; }
+      .ac-item:hover, .ac-item.active { background: rgba(122, 162, 247, 0.14); }
+      .ac-item .ac-tag {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ac-item .ac-count {
+        font-size: 11px;
+        color: var(--dim);
+        flex-shrink: 0;
+      }
       /* 인물 그리드 (분할 모드) */
       .char-grid {
         display: grid;
@@ -811,6 +859,28 @@
         text-decoration: line-through;
       }
 
+      /* 동일 IP 중복요청 거절 모달 */
+      .dup-modal-overlay {
+        position: fixed; inset: 0; z-index: 2000;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+      }
+      .dup-modal-box {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 14px; padding: 28px 24px; max-width: 360px; width: 100%;
+        text-align: center; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+      }
+      .dup-modal-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; }
+      .dup-modal-title { margin: 0 0 10px; font-size: 17px; color: var(--text); }
+      .dup-modal-msg { margin: 0 0 6px; font-size: 14px; color: var(--text); line-height: 1.5; }
+      .dup-modal-sub { margin: 0 0 20px; font-size: 12px; color: var(--dim); line-height: 1.5; }
+      .dup-modal-btn {
+        padding: 9px 28px; font-size: 14px; font-weight: 600;
+        color: var(--bg); background: var(--primary); border: none;
+        border-radius: 8px; cursor: pointer;
+      }
+      .dup-modal-btn:hover { opacity: 0.9; }
     </style>
   </head>
   <body>
@@ -1086,14 +1156,19 @@
               >
                 복사하기
               </button>
-              <textarea
-                id="final_prompt_edit"
-                class="final-edit"
-                rows="3"
-                placeholder="Danbooru 태그 (쉼표로 구분). 직접 수정하면 아래 뱃지에 반영됩니다. (고정태그 제외)"
-                oninput="onFinalEditInput()"
-                onblur="onFinalEditBlur()"
-              ></textarea>
+              <div class="ac-wrap">
+                <textarea
+                  id="final_prompt_edit"
+                  class="final-edit"
+                  rows="3"
+                  placeholder="Danbooru 태그 (쉼표로 구분). 직접 수정하면 아래 뱃지에 반영됩니다. (고정태그 제외)"
+                  oninput="onFinalEditInput(); onAcInput()"
+                  onkeydown="onAcKeydown(event)"
+                  onblur="onFinalEditBlur()"
+                  autocomplete="off"
+                ></textarea>
+                <div id="ac_dropdown" class="ac-dropdown" style="display:none;"></div>
+              </div>
               <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
             </div>
 
@@ -1134,6 +1209,9 @@
       let currentResultData = null;
       let lastDirectDBResults = null;
       let tagInfo = new Map();
+      // 자동완성용: 태그별 {tag, postCount, hay(소문자 tag+desc)} + bigram 역인덱스.
+      let acEntries = [];               // 전체 엔트리(검색 대상)
+      const acBigram = new Map();       // bigram → Set(entry index) (substring 후보 좁히기)
 
       // ── 입력 모드 (기본 한문장 / 고급 인물분할) ──
       let currentMode = "basic";
@@ -1297,17 +1375,82 @@
             const thirdComma = line.indexOf(',', secondComma + 1);
             
             if (thirdComma !== -1) {
+              // field2 = post_count, field3~ = description
+              const postCount = parseInt(line.substring(secondComma + 1, thirdComma).trim()) || 0;
               let desc = line.substring(thirdComma + 1).trim();
               if (desc.startsWith('"') && desc.endsWith('"')) {
                 desc = desc.substring(1, desc.length - 1);
               }
               tagInfo.set(name, { desc: desc, category: parseInt(categoryStr) });
+              // 자동완성 인덱스: 영어 태그 + 설명문(한글 별칭 포함) 전체를 substring 대상으로.
+              acEntries.push({ tag: name, postCount: postCount, hay: (name + " " + desc).toLowerCase() });
             }
           }
-          console.log("Loaded tag info: " + tagInfo.size);
+          buildAcBigramIndex();
+          console.log("Loaded tag info: " + tagInfo.size + " / AC entries: " + acEntries.length);
         } catch (err) {
           console.warn("Failed to load tag info:", err);
         }
+      }
+
+      // ── 자동완성 인덱스/검색 ──────────────────────────────────────
+      // bigram(연속 2글자) 역인덱스. substring 쿼리를 bigram으로 쪼개 후보 엔트리를
+      // 교집합으로 좁힌 뒤 정밀 substring 필터 → post_count 정렬. (영/한 모두 동작)
+      function _bigrams(str) {
+        const out = new Set();
+        const t = str.toLowerCase();
+        for (let i = 0; i < t.length - 1; i++) {
+          const bg = t.substring(i, i + 2);
+          if (bg.trim().length === 2) out.add(bg);  // 공백 포함 bigram 제외
+        }
+        return out;
+      }
+
+      function buildAcBigramIndex() {
+        acBigram.clear();
+        for (let i = 0; i < acEntries.length; i++) {
+          const seen = _bigrams(acEntries[i].hay);
+          seen.forEach((bg) => {
+            let set = acBigram.get(bg);
+            if (!set) { set = new Set(); acBigram.set(bg, set); }
+            set.add(i);
+          });
+        }
+      }
+
+      // 쿼리 → 상위 N개 엔트리(post_count 내림차순).
+      function searchAutocomplete(query, limit) {
+        const q = query.trim().toLowerCase();
+        if (q.length < 1) return [];
+
+        let candidateIdx = null;
+        if (q.length >= 2) {
+          // bigram 교집합으로 후보 좁히기
+          const qbgs = [..._bigrams(q)];
+          if (qbgs.length) {
+            for (const bg of qbgs) {
+              const set = acBigram.get(bg);
+              if (!set) { candidateIdx = new Set(); break; }   // 하나라도 없으면 매치 0
+              if (candidateIdx === null) {
+                candidateIdx = new Set(set);
+              } else {
+                // 교집합
+                const next = new Set();
+                for (const i of candidateIdx) if (set.has(i)) next.add(i);
+                candidateIdx = next;
+              }
+              if (candidateIdx.size === 0) break;
+            }
+          }
+        }
+        // 후보가 정해졌으면 그 안에서, 아니면(1글자) 전체에서 substring 정밀 필터
+        const pool = candidateIdx ? [...candidateIdx].map((i) => acEntries[i]) : acEntries;
+        const hits = [];
+        for (const e of pool) {
+          if (e.hay.includes(q)) hits.push(e);
+        }
+        hits.sort((a, b) => b.postCount - a.postCount);
+        return hits.slice(0, limit);
       }
 
       document.addEventListener("DOMContentLoaded", loadTagDescriptions);
@@ -1475,7 +1618,12 @@
             for (const line of lines) {
               if (!line.trim()) continue;
               const chunk = JSON.parse(line);
-              
+              if (chunk.status === "rejected" || chunk.reason === "duplicate_ip") {
+                showDuplicateModal(chunk.message || "동일 IP로 처리 중인 작업이 있습니다.");
+                await reader.cancel();
+                resetButton();
+                return;
+              }
               if (chunk.status) {
                 btnText.textContent = chunk.status;
                 // 대기 메시지는 결과 영역(빈 상태)에 크게 표시
@@ -1872,6 +2020,17 @@
         }
       }
 
+      function showDuplicateModal(msg) {
+        const m = document.getElementById("dup_modal");
+        const t = document.getElementById("dup_modal_msg");
+        if (t) t.textContent = msg || "동일 IP로 처리 중인 작업이 있습니다.";
+        if (m) m.style.display = "flex";
+      }
+      function closeDuplicateModal() {
+        const m = document.getElementById("dup_modal");
+        if (m) m.style.display = "none";
+      }
+
       function showError(msg) {
         const errorEl = document.getElementById("error_msg");
         errorEl.textContent = msg;
@@ -2041,8 +2200,106 @@
 
       // textarea blur → 정규화된 값으로 뱃지 재렌더 + textarea 재동기화.
       function onFinalEditBlur() {
+        // 드롭다운 항목 클릭(mousedown)이 blur보다 먼저 처리되도록 약간 지연 후 닫기.
+        setTimeout(hideAc, 150);
         onFinalEditInput();
         displayResults();
+      }
+
+      // ── 자동완성 UI ───────────────────────────────────────────────
+      let _acItems = [];        // 현재 표시 중인 후보 엔트리
+      let _acActive = -1;       // 키보드 선택 인덱스
+      let _acDebounce = null;
+
+      // 커서가 위치한 쉼표 구간(현재 편집 중인 토큰)의 [시작, 끝, 텍스트] 반환.
+      function _currentToken(ta) {
+        const v = ta.value;
+        const pos = ta.selectionStart;
+        let start = v.lastIndexOf(",", pos - 1) + 1;   // 직전 쉼표 다음
+        let end = v.indexOf(",", pos);
+        if (end === -1) end = v.length;
+        return { start, end, text: v.substring(start, end).trim() };
+      }
+
+      function onAcInput() {
+        const ta = document.getElementById("final_prompt_edit");
+        if (!ta) return;
+        if (_acDebounce) clearTimeout(_acDebounce);
+        _acDebounce = setTimeout(() => {
+          const tok = _currentToken(ta);
+          if (!tok.text || tok.text.length < 1 || acEntries.length === 0) { hideAc(); return; }
+          _acItems = searchAutocomplete(tok.text, 20);
+          if (_acItems.length === 0) { hideAc(); return; }
+          _acActive = -1;
+          renderAc();
+        }, 120);
+      }
+
+      function renderAc() {
+        const dd = document.getElementById("ac_dropdown");
+        if (!dd) return;
+        dd.innerHTML = _acItems.map((e, i) => {
+          const pc = e.postCount >= 1000 ? (e.postCount / 1000).toFixed(0) + "k" : String(e.postCount);
+          return '<div class="ac-item' + (i === _acActive ? " active" : "") +
+            '" data-i="' + i + '" onmousedown="acPick(' + i + ')">' +
+            '<span class="ac-tag">' + escapeHtml(e.tag) + '</span>' +
+            '<span class="ac-count">' + pc + '</span></div>';
+        }).join("");
+        dd.style.display = "block";
+      }
+
+      function hideAc() {
+        const dd = document.getElementById("ac_dropdown");
+        if (dd) { dd.style.display = "none"; dd.innerHTML = ""; }
+        _acItems = []; _acActive = -1;
+      }
+
+      // 선택한 태그를 현재 토큰 자리에 삽입(영어 태그 그대로, 언더스코어 유지).
+      function acPick(i) {
+        const ta = document.getElementById("final_prompt_edit");
+        if (!ta || !_acItems[i]) return;
+        const tok = _currentToken(ta);
+        const before = ta.value.substring(0, tok.start);
+        const after = ta.value.substring(tok.end);
+        const tag = _acItems[i].tag;
+        // 앞부분 끝 공백 정리 후 "태그" 삽입, 뒤에 쉼표+공백.
+        const left = before.replace(/\s*$/, "");
+        const sep = left && !left.endsWith(",") ? ", " : (left ? " " : "");
+        const insert = (left ? left + (left.endsWith(",") ? " " : sep) : "") + tag;
+        const newVal = insert + ", " + after.replace(/^\s*,?\s*/, "");
+        ta.value = newVal.replace(/,\s*,/g, ",").replace(/,\s*$/, ", ");
+        // 커서를 삽입한 태그 뒤로
+        const caret = insert.length + 2;
+        ta.setSelectionRange(caret, caret);
+        ta.focus();
+        hideAc();
+        onFinalEditInput();   // 상태 동기화(뱃지는 blur 때 갱신)
+      }
+
+      function onAcKeydown(e) {
+        const dd = document.getElementById("ac_dropdown");
+        if (!dd || dd.style.display === "none" || _acItems.length === 0) return;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          _acActive = (_acActive + 1) % _acItems.length;
+          renderAc(); _scrollAcIntoView();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          _acActive = (_acActive - 1 + _acItems.length) % _acItems.length;
+          renderAc(); _scrollAcIntoView();
+        } else if (e.key === "Enter" && _acActive >= 0) {
+          e.preventDefault();
+          acPick(_acActive);
+        } else if (e.key === "Escape") {
+          hideAc();
+        }
+      }
+
+      function _scrollAcIntoView() {
+        const dd = document.getElementById("ac_dropdown");
+        if (!dd) return;
+        const el = dd.querySelector('.ac-item[data-i="' + _acActive + '"]');
+        if (el) el.scrollIntoView({ block: "nearest" });
       }
 
       function parsePassthroughNames() {
@@ -2156,5 +2413,15 @@
         });
       }
     </script>
+    <!-- 동일 IP 중복요청 거절 모달 -->
+    <div id="dup_modal" class="dup-modal-overlay" style="display:none;">
+      <div class="dup-modal-box">
+        <div class="dup-modal-icon">🚫</div>
+        <h3 class="dup-modal-title">요청이 거절되었습니다</h3>
+        <p id="dup_modal_msg" class="dup-modal-msg">동일 IP로 처리 중인 작업이 있습니다.</p>
+        <p class="dup-modal-sub">이전 작업이 끝난 뒤 다시 시도해주세요.</p>
+        <button type="button" class="dup-modal-btn" onclick="closeDuplicateModal()">확인</button>
+      </div>
+    </div>
   </body>
 </html>

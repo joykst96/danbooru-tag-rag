@@ -16,7 +16,7 @@ import logging
 from collections import deque
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -51,6 +51,34 @@ import asyncio as _asyncio
 
 _gen_lock = _asyncio.Lock()           # next/serving 갱신 보호
 _gen_state = {"next": 0, "serving": 1}  # 발급 카운터 / 현재 처리할 번호
+_active_ips: set[str] = set()          # 큐 대기 또는 처리 중인 클라이언트 IP
+
+
+def _client_ip(request) -> str:
+    """실제 클라이언트 IP. 프록시(Cloudflare Tunnel/nginx) 뒤이므로 헤더 우선.
+    CF-Connecting-IP → X-Forwarded-For(첫 IP) → request.client.host 순."""
+    h = request.headers
+    cf = h.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = h.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _try_register_ip(ip: str) -> bool:
+    """IP를 활성 집합에 등록. 이미 있으면(동일 IP 큐/처리 중) False=거절."""
+    async with _gen_lock:
+        if ip in _active_ips:
+            return False
+        _active_ips.add(ip)
+        return True
+
+
+async def _release_ip(ip: str) -> None:
+    async with _gen_lock:
+        _active_ips.discard(ip)
 
 
 async def _take_ticket() -> int:
@@ -177,10 +205,22 @@ class GenerateSplitRequest(BaseModel):
 # /api/generate — 4회 분해 → 구버전 호환 SSE
 # ---------------------------------------------------------------------------
 @app.post("/api/generate")
-async def generate(req: GenerateRequest):
+async def generate(req: GenerateRequest, request: Request):
+    client_ip = _client_ip(request)
+
     async def stream():
         if not req.prompt.strip():
             yield json.dumps({"status": "오류", "data": {}}, ensure_ascii=False) + "\n"
+            return
+
+        # 동일 IP가 이미 큐/처리 중이면 거절(자동화 연속요청 차단). 정상 UI는 동시요청 안 보냄.
+        if not await _try_register_ip(client_ip):
+            genlog.console_log_rejected("basic", client_ip)
+            yield json.dumps(
+                {"status": "rejected", "reason": "duplicate_ip",
+                 "message": "동일 IP로 처리 중인 작업이 있습니다.", "data": {}},
+                ensure_ascii=False,
+            ) + "\n"
             return
 
         my = await _take_ticket()
@@ -249,6 +289,7 @@ async def generate(req: GenerateRequest):
         finally:
             # 성공/실패/연결끊김 무엇이든 다음 사람에게 차례를 넘겨야 큐가 안 막힘
             await _advance_serving()
+            await _release_ip(client_ip)
 
     return StreamingResponse(
         stream(),
@@ -261,8 +302,10 @@ async def generate(req: GenerateRequest):
 
 
 @app.post("/api/generate_split")
-async def generate_split(req: GenerateSplitRequest):
+async def generate_split(req: GenerateSplitRequest, request: Request):
     """분할입력(고급) — 인물칸 N + 배경칸 1. 큐는 /api/generate 와 공유."""
+    client_ip = _client_ip(request)
+
     async def stream():
         blocks = [
             CharBlock(name=c.name, series=c.series, desc=c.desc, is_original=c.is_original, is_passthrough=c.is_passthrough)
@@ -273,6 +316,16 @@ async def generate_split(req: GenerateSplitRequest):
         )
         if not has_char and not req.background.strip():
             yield json.dumps({"status": "오류", "data": {}}, ensure_ascii=False) + "\n"
+            return
+
+        # 동일 IP 큐/처리 중이면 거절(자동화 차단). 큐는 generate 와 공유하므로 IP 집합도 공유.
+        if not await _try_register_ip(client_ip):
+            genlog.console_log_rejected("split", client_ip)
+            yield json.dumps(
+                {"status": "rejected", "reason": "duplicate_ip",
+                 "message": "동일 IP로 처리 중인 작업이 있습니다.", "data": {}},
+                ensure_ascii=False,
+            ) + "\n"
             return
 
         my = await _take_ticket()
@@ -363,6 +416,7 @@ async def generate_split(req: GenerateSplitRequest):
             raise
         finally:
             await _advance_serving()
+            await _release_ip(client_ip)
 
     return StreamingResponse(
         stream(),

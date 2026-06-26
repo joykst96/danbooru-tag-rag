@@ -144,3 +144,12 @@ def console_log_error(mode: str, user_input: str, err: Exception) -> None:
             logger.error(f"   └ 입력: {user_input}")
     except Exception as e:
         logger.warning(f"에러 로그 출력 실패: {e}")
+
+
+def console_log_rejected(mode: str, ip: str) -> None:
+    """동일 IP 중복요청 거절을 콘솔에 남긴다(자동화 연속요청 감지용)."""
+    try:
+        head = _MODE_EMOJI.get(mode, f"⚪ {mode}")
+        logger.warning(f"🚫 중복 IP 거절 ({head}): {ip} — 처리 중인 작업이 있음")
+    except Exception as e:
+        logger.warning(f"거절 로그 출력 실패: {e}")
