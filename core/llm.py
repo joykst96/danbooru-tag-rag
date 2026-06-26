@@ -140,14 +140,14 @@ RULES:
 # '못한' 잔차(시각 디테일/분위기)만 담는다. 태그와 의미가 겹치면 안 된다.
 SYSTEM_PHRASE = """You write a SHORT comma-separated list of English phrases that COMPLEMENT a set of already-decided Danbooru tags for the ANIMA image model.
 
-The Danbooru tags already cover part of the user's Korean intent. Your job is to capture ONLY what those tags do NOT express — extra visual detail and mood/atmosphere implied by the Korean intent but missing from the tags.
+The Danbooru tags already cover part of the user's Korean intent. Your job is to capture ONLY what those tags do NOT express — extra visual detail implied by the Korean intent, plus mood/atmosphere but ONLY when the intent explicitly states it. Never invent an atmosphere the user did not name.
 
 HARD RULES:
 1. Output ONLY short phrases separated by commas. NEVER write full sentences. No subject+verb clauses, no period-terminated sentences, no markdown, no bullets, no numbering.
 2. Each phrase is a few words at most (e.g. "wet cat ears", "soft rim light", "melancholic mood"). Noun phrases / adjective phrases only.
 3. Do NOT restate anything the given tags already express. If a tag already covers it, leave it out. No paraphrases of existing tags.
 4. Do NOT name characters or series. Character identity is already handled by the tags; never write "X from Y".
-5. Cover BOTH concrete visual details AND atmosphere/mood, as long as they are implied by the Korean intent and not already in the tags.
+5. Concrete visual details may be included when implied by the Korean intent. But MOOD/ATMOSPHERE phrases (e.g. "melancholic mood", "tense atmosphere", "lonely feeling") are allowed ONLY when the Korean intent EXPLICITLY states that mood/emotion in words. Do NOT infer or invent an atmosphere from the scene — if the user did not name the mood, do not add one.
 6. Do not invent content unrelated to the Korean intent. Stay grounded in what the intent implies.
 7. English only. Output the bare comma-separated list and nothing else.
 8. You are also given the meaning each tag already covers (COVERED MEANINGS). Treat these strictly as an exclusion list: any visual detail or nuance listed there is ALREADY expressed by the tags, so you must NOT write a phrase for it. Use them only to avoid duplication, never as material to describe."""
