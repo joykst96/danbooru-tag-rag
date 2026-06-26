@@ -679,41 +679,40 @@
       /* ── 자동완성 드롭다운 ── */
       .ac-wrap { position: relative; }
       .ac-dropdown {
+        display: none;
         position: absolute;
         left: 0;
         right: 0;
         top: 100%;
-        margin-top: 2px;
+        margin-top: 4px;
         z-index: 50;
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-        /* 5개까지 보이고(약 34px*5) 나머지는 스크롤로 20개까지 */
-        max-height: 170px;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        max-height: 320px;          /* textarea 가 크므로 더 많은 후보 노출 */
         overflow-y: auto;
-        /* 스크롤바 숨김 (Firefox / IE) */
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+        scrollbar-width: thin;
+        padding: 4px;
       }
-      /* 스크롤바 숨김 (WebKit) */
-      .ac-dropdown::-webkit-scrollbar { width: 0; height: 0; display: none; }
+      .ac-dropdown::-webkit-scrollbar { width: 8px; }
+      .ac-dropdown::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
       .ac-item {
+        padding: 7px 10px;
+        border-radius: 7px;
+        cursor: pointer;
+        line-height: 1.3;
+      }
+      .ac-item:hover, .ac-item.active { background: rgba(122, 162, 247, 0.16); }
+      .ac-row1 {
         display: flex;
-        align-items: center;
+        align-items: baseline;
         justify-content: space-between;
         gap: 10px;
-        padding: 7px 12px;
-        font-size: 13px;
-        cursor: pointer;
-        height: 34px;
-        box-sizing: border-box;
-        border-bottom: 1px solid var(--border);
       }
-      .ac-item:last-child { border-bottom: none; }
-      .ac-item:hover, .ac-item.active { background: rgba(122, 162, 247, 0.14); }
       .ac-item .ac-tag {
         font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 14px;
         color: var(--text);
         white-space: nowrap;
         overflow: hidden;
@@ -723,6 +722,39 @@
         font-size: 11px;
         color: var(--dim);
         flex-shrink: 0;
+      }
+      .ac-row2 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 3px;
+        min-height: 0;
+      }
+      .ac-row2:empty { display: none; }
+      .ac-badge {
+        font-size: 10px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      .ac-badge-cat {
+        background: rgba(122, 162, 247, 0.18);
+        color: var(--accent);
+        border: 1px solid rgba(122, 162, 247, 0.3);
+      }
+      .ac-alias {
+        font-size: 11px;
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ac-item mark {
+        background: rgba(122, 162, 247, 0.35);
+        color: var(--text);
+        border-radius: 2px;
+        padding: 0 1px;
       }
       /* 인물 그리드 (분할 모드) */
       .char-grid {
@@ -1232,12 +1264,11 @@
                   class="final-edit"
                   rows="3"
                   placeholder="Danbooru 태그 (쉼표로 구분). 직접 수정하면 아래 뱃지에 반영됩니다. (고정태그 제외)"
-                  oninput="onFinalEditInput(); onAcInput()"
-                  onkeydown="onAcKeydown(event)"
+                  oninput="onFinalEditInput()"
                   onblur="onFinalEditBlur()"
                   autocomplete="off"
                 ></textarea>
-                <div id="ac_dropdown" class="ac-dropdown" style="display:none;"></div>
+                <div id="ac_dropdown" class="ac-dropdown"></div>
               </div>
               <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
             </div>
@@ -1279,9 +1310,6 @@
       let currentResultData = null;
       let lastDirectDBResults = null;
       let tagInfo = new Map();
-      // 자동완성용: 태그별 {tag, postCount, hay(소문자 tag+desc)} + bigram 역인덱스.
-      let acEntries = [];               // 전체 엔트리(검색 대상)
-      const acBigram = new Map();       // bigram → Set(entry index) (substring 후보 좁히기)
 
       // ── 입력 모드 (기본 한문장 / 고급 인물분할) ──
       let currentMode = "basic";
@@ -1473,107 +1501,252 @@
         if (el) el.remove();
       }
 
-      async function loadTagDescriptions() {
-        try {
-          const response = await fetch('/danbooru-tags.csv');
-          if (!response.ok) return;
-          const text = await response.text();
-          
-          const lines = text.split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            
-            const firstComma = line.indexOf(',');
-            if (firstComma === -1) continue;
-            const name = line.substring(0, firstComma).trim();
-            
-            const secondComma = line.indexOf(',', firstComma + 1);
-            if (secondComma === -1) continue;
-            const categoryStr = line.substring(firstComma + 1, secondComma).trim();
-            
-            const thirdComma = line.indexOf(',', secondComma + 1);
-            
-            if (thirdComma !== -1) {
-              // field2 = post_count, field3~ = description
-              const postCount = parseInt(line.substring(secondComma + 1, thirdComma).trim()) || 0;
-              let desc = line.substring(thirdComma + 1).trim();
-              if (desc.startsWith('"') && desc.endsWith('"')) {
-                desc = desc.substring(1, desc.length - 1);
-              }
-              tagInfo.set(name, { desc: desc, category: parseInt(categoryStr) });
-              // 자동완성 인덱스: 영어 태그 + 설명문(한글 별칭 포함) 전체를 substring 대상으로.
-              acEntries.push({ tag: name, postCount: postCount, hay: (name + " " + desc).toLowerCase() });
+      // ═════════ 태그 자동완성 (Danbooru + 한글 alias, 전부 로컬) ═════════
+      // anima-webgpu 자동완성 포팅: Web Worker CSV 파싱 + IndexedDB 캐시 + bigram 역인덱스.
+      // 데이터: /danbooru-tags.csv. 프롬프트는 서버로 안 나감(검색 전부 로컬).
+      //   영어: prefix 매칭. 한글: 2글자↑ bigram 역인덱스 → desc substring. post_count 내림차순.
+      // CSV 한 번만 파싱해 자동완성용(ac.tags)과 결과 뱃지용(tagInfo) 둘 다 채운다.
+      const AC_CSV_URL = "/danbooru-tags.csv";
+      const AC_DB_NAME = "dtr-tagac";
+      const AC_DB_VER = 1;
+      const AC_STORE = "index";
+
+      // Worker: CSV → {tag, pc, cat, alias, tagNorm, desc, category2} 파싱 + bigram 인덱스.
+      const AC_WORKER_SRC = `
+        // name,category,post_count,"[대분류 > 소분류] 정의문. 키워드: 별칭1, 별칭2..."
+        function parseLine(line) {
+          const m = line.match(/^([^,]*),([^,]*),([^,]*),([\\s\\S]*)$/);
+          if (!m) return null;
+          let desc = m[4].trim();
+          if (desc.startsWith('"') && desc.endsWith('"')) desc = desc.slice(1, -1);
+          const pc = parseInt(m[3], 10);
+          const cat2 = parseInt(m[2], 10);   // 2열 숫자 카테고리(결과 뱃지 색용)
+          if (!m[1] || isNaN(pc)) return null;
+          return { tag: m[1], pc, cat2: isNaN(cat2) ? 0 : cat2, desc };
+        }
+        // 한글 alias(표시용): "키워드:" 뒤 콤마 분리. (최신 CSV는 꺾쇠<>가 없음)
+        function extractAliases(desc) {
+          const i = desc.indexOf('키워드:');
+          if (i < 0) return [];
+          return desc.slice(i + 4).split(',').map(s => s.trim()).filter(Boolean);
+        }
+        // 카테고리(표시용): 맨 앞 [대분류] 또는 [대분류 > 소분류].
+        function extractCategory(desc) {
+          const mb = desc.match(/^\\s*\\[([^\\]]*)\\]/);
+          return mb ? mb[1].trim() : null;
+        }
+        self.onmessage = async (ev) => {
+          try {
+            const { url } = ev.data;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('CSV HTTP ' + res.status);
+            const text = await res.text();
+            self.postMessage({ type: 'progress', stage: '파싱' });
+            const lines = text.split('\\n');
+            const tags = [];        // 자동완성용 {tag, pc, desc, alias, cat, tagNorm}
+            const infoKeys = [];    // 결과 뱃지용 tagInfo: tag → {desc, category}
+            const infoVals = [];
+            for (let i = 0; i < lines.length; i++) {
+              const ln = lines[i];
+              if (!ln.trim()) continue;
+              if (i === 0 && /^name\\s*,/.test(ln)) continue;   // 헤더 스킵
+              const r = parseLine(ln);
+              if (!r) continue;
+              tags.push({
+                tag: r.tag, pc: r.pc, desc: r.desc,
+                alias: extractAliases(r.desc).join(', '),
+                cat: extractCategory(r.desc),
+                tagNorm: r.tag.toLowerCase().replace(/_/g, ' '),
+              });
+              infoKeys.push(r.tag);
+              infoVals.push({ desc: r.desc, category: r.cat2 });
             }
+            tags.sort((a, b) => b.pc - a.pc);   // post_count 내림차순
+            self.postMessage({ type: 'progress', stage: '인덱스' });
+            // 한글 bigram 역인덱스: desc 연속 2글자(공백 제외) → 행 인덱스
+            const bi = new Map();
+            for (let i = 0; i < tags.length; i++) {
+              const s = tags[i].desc;
+              const seen = new Set();
+              for (let p = 0; p < s.length - 1; p++) {
+                const a = s[p], b = s[p + 1];
+                if (a === ' ' || b === ' ') continue;
+                const bg = a + b;
+                if (seen.has(bg)) continue;
+                seen.add(bg);
+                let arr = bi.get(bg);
+                if (!arr) { arr = []; bi.set(bg, arr); }
+                arr.push(i);
+              }
+            }
+            const bigramKeys = [], bigramVals = [];
+            for (const [k, v] of bi) { bigramKeys.push(k); bigramVals.push(v); }
+            self.postMessage({ type: 'done', tags, bigramKeys, bigramVals, infoKeys, infoVals });
+          } catch (e) {
+            self.postMessage({ type: 'error', message: e.message });
           }
-          buildAcBigramIndex();
-          console.log("Loaded tag info: " + tagInfo.size + " / AC entries: " + acEntries.length);
-        } catch (err) {
-          console.warn("Failed to load tag info:", err);
+        };
+      `;
+
+      // ── IndexedDB: 빌드 결과 저장/로드 (재방문 시 파싱 스킵) ──
+      function acIdbOpen() {
+        return new Promise((resolve, reject) => {
+          const rq = indexedDB.open(AC_DB_NAME, AC_DB_VER);
+          rq.onupgradeneeded = () => {
+            const db = rq.result;
+            if (db.objectStoreNames.contains(AC_STORE)) db.deleteObjectStore(AC_STORE);
+            db.createObjectStore(AC_STORE);
+          };
+          rq.onsuccess = () => resolve(rq.result);
+          rq.onerror = () => reject(rq.error);
+        });
+      }
+      async function acIdbGet(key) {
+        const db = await acIdbOpen();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(AC_STORE, "readonly");
+          const rq = tx.objectStore(AC_STORE).get(key);
+          rq.onsuccess = () => resolve(rq.result);
+          rq.onerror = () => reject(rq.error);
+        });
+      }
+      async function acIdbSet(key, val) {
+        const db = await acIdbOpen();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(AC_STORE, "readwrite");
+          tx.objectStore(AC_STORE).put(val, key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      const ac = { ready: false, loading: false, tags: null, bigram: null };
+
+      // ac.tags/bigram 채우고, 결과 뱃지용 tagInfo 도 함께 구성한다.
+      function _acFillTagInfo(infoKeys, infoVals) {
+        tagInfo.clear();
+        for (let i = 0; i < infoKeys.length; i++) tagInfo.set(infoKeys[i], infoVals[i]);
+      }
+      function _acRebuildBigram(keys, vals) {
+        ac.bigram = new Map();
+        for (let i = 0; i < keys.length; i++) ac.bigram.set(keys[i], vals[i]);
+      }
+
+      async function acEnsureLoaded() {
+        if (ac.ready || ac.loading) return;
+        ac.loading = true;
+        try {
+          // 1) IndexedDB 캐시 우선
+          const cached = await acIdbGet("data");
+          if (cached && cached.tags && cached.bigramKeys) {
+            ac.tags = cached.tags;
+            _acRebuildBigram(cached.bigramKeys, cached.bigramVals);
+            if (cached.infoKeys) _acFillTagInfo(cached.infoKeys, cached.infoVals);
+            ac.ready = true; ac.loading = false;
+            console.log("태그 자동완성 준비됨 (캐시 " + ac.tags.length + "개)");
+            return;
+          }
+          // 2) Worker 로 CSV 파싱 + 인덱스 빌드
+          console.log("태그 자동완성 데이터 빌드 중... (최초 1회)");
+          const blob = new Blob([AC_WORKER_SRC], { type: "application/javascript" });
+          const wk = new Worker(URL.createObjectURL(blob), { type: "module" });
+          const result = await new Promise((resolve, reject) => {
+            wk.onmessage = (ev) => {
+              const m = ev.data;
+              if (m.type === "done") resolve(m);
+              else if (m.type === "error") reject(new Error(m.message));
+            };
+            wk.onerror = (e) => reject(new Error(e.message || "worker 오류"));
+            wk.postMessage({ url: new URL(AC_CSV_URL, location.href).href });
+          });
+          wk.terminate();
+          ac.tags = result.tags;
+          _acRebuildBigram(result.bigramKeys, result.bigramVals);
+          _acFillTagInfo(result.infoKeys, result.infoVals);
+          ac.ready = true;
+          console.log("태그 자동완성 준비됨 (" + ac.tags.length + "개)");
+          // 3) IndexedDB 저장 (다음 방문 즉시)
+          acIdbSet("data", {
+            tags: result.tags,
+            bigramKeys: result.bigramKeys, bigramVals: result.bigramVals,
+            infoKeys: result.infoKeys, infoVals: result.infoVals,
+          }).catch(() => {});
+          // 결과가 이미 화면에 있으면 뱃지 카테고리 색 갱신
+          if (typeof currentResultData !== "undefined" && currentResultData && currentResultData.final_prompt) {
+            try { displayResults(); } catch (e) {}
+          }
+        } catch (e) {
+          console.warn("태그 자동완성 로드 실패:", e);
+        } finally {
+          ac.loading = false;
         }
       }
 
-      // ── 자동완성 인덱스/검색 ──────────────────────────────────────
-      // bigram(연속 2글자) 역인덱스. substring 쿼리를 bigram으로 쪼개 후보 엔트리를
-      // 교집합으로 좁힌 뒤 정밀 substring 필터 → post_count 정렬. (영/한 모두 동작)
-      function _bigrams(str) {
-        const out = new Set();
-        const t = str.toLowerCase();
-        for (let i = 0; i < t.length - 1; i++) {
-          const bg = t.substring(i, i + 2);
-          if (bg.trim().length === 2) out.add(bg);  // 공백 포함 bigram 제외
+      // ── 검색 ──
+      const AC_LIMIT = 50;
+      const HANGUL_RE = /[\uac00-\ud7a3]/;
+      function acSearch(qRaw) {
+        if (!ac.ready) return [];
+        const q = qRaw.trim();
+        if (!q) return [];
+        const out = [];
+        if (HANGUL_RE.test(q)) {
+          if (q.length < 2) return [];   // 한글 1글자 스킵
+          const cand = ac.bigram.get(q.slice(0, 2));
+          if (!cand) return [];
+          for (let i = 0; i < cand.length; i++) {
+            const r = ac.tags[cand[i]];
+            if (r.desc.includes(q)) { out.push(r); if (out.length >= AC_LIMIT) break; }
+          }
+        } else {
+          // 영어 prefix(언더스코어/공백 양쪽 정규화)
+          const ql = q.toLowerCase().replace(/_/g, " ");
+          for (let i = 0; i < ac.tags.length; i++) {
+            if (ac.tags[i].tagNorm.startsWith(ql)) {
+              out.push(ac.tags[i]); if (out.length >= AC_LIMIT) break;
+            }
+          }
         }
         return out;
       }
-
-      function buildAcBigramIndex() {
-        acBigram.clear();
-        for (let i = 0; i < acEntries.length; i++) {
-          const seen = _bigrams(acEntries[i].hay);
-          seen.forEach((bg) => {
-            let set = acBigram.get(bg);
-            if (!set) { set = new Set(); acBigram.set(bg, set); }
-            set.add(i);
-          });
-        }
+      function acFmtCount(n) {
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+        return String(n);
+      }
+      function acEscape(s) {
+        return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      }
+      function acHighlight(text, q) {
+        const esc = acEscape(text);
+        if (!q) return esc;
+        const idx = text.toLowerCase().indexOf(q.toLowerCase());
+        if (idx < 0) return esc;
+        return acEscape(text.slice(0, idx)) + "<mark>" +
+               acEscape(text.slice(idx, idx + q.length)) + "</mark>" +
+               acEscape(text.slice(idx + q.length));
+      }
+      // 커서 기준 현재 토큰 [경계, 단어부 오프셋, 검색어]. 가중치/괄호 문법 제외.
+      function acCurrentToken(text, caret) {
+        let start = text.lastIndexOf(",", caret - 1) + 1;
+        let end = text.indexOf(",", caret);
+        if (end < 0) end = text.length;
+        let inner = text.slice(start, end);
+        let lead = 0;
+        const mLead = inner.match(/^[\s(]*/);
+        if (mLead) { lead = mLead[0].length; inner = inner.slice(lead); }
+        const mTail = inner.match(/(:[+-]?\d*\.?\d*)?[\s)]*$/);
+        if (mTail && mTail[0]) inner = inner.slice(0, inner.length - mTail[0].length);
+        const wordStart = start + lead;
+        return { tokenStart: start, tokenEnd: end, wordStart, wordEnd: wordStart + inner.length, query: inner };
       }
 
-      // 쿼리 → 상위 N개 엔트리(post_count 내림차순).
-      function searchAutocomplete(query, limit) {
-        const q = query.trim().toLowerCase();
-        if (q.length < 1) return [];
-
-        let candidateIdx = null;
-        if (q.length >= 2) {
-          // bigram 교집합으로 후보 좁히기
-          const qbgs = [..._bigrams(q)];
-          if (qbgs.length) {
-            for (const bg of qbgs) {
-              const set = acBigram.get(bg);
-              if (!set) { candidateIdx = new Set(); break; }   // 하나라도 없으면 매치 0
-              if (candidateIdx === null) {
-                candidateIdx = new Set(set);
-              } else {
-                // 교집합
-                const next = new Set();
-                for (const i of candidateIdx) if (set.has(i)) next.add(i);
-                candidateIdx = next;
-              }
-              if (candidateIdx.size === 0) break;
-            }
-          }
-        }
-        // 후보가 정해졌으면 그 안에서, 아니면(1글자) 전체에서 substring 정밀 필터
-        const pool = candidateIdx ? [...candidateIdx].map((i) => acEntries[i]) : acEntries;
-        const hits = [];
-        for (const e of pool) {
-          if (e.hay.includes(q)) hits.push(e);
-        }
-        hits.sort((a, b) => b.postCount - a.postCount);
-        return hits.slice(0, limit);
-      }
-
-      document.addEventListener("DOMContentLoaded", loadTagDescriptions);
+      document.addEventListener("DOMContentLoaded", () => {
+        makeAutocomplete("final_prompt_edit", "ac_dropdown");
+        // 첫 포커스 시 자동완성 데이터 로드(페이지 로드를 막지 않음)
+        const _ta = document.getElementById("final_prompt_edit");
+        if (_ta) _ta.addEventListener("focus", acEnsureLoaded, { once: true });
+      });
       document.addEventListener("DOMContentLoaded", () => { addArtistRow(); renderQualityBadges(); });
 
       // 글로벌 툴팁 JS 로직
@@ -2463,99 +2636,90 @@
       }
 
       // ── 자동완성 UI ───────────────────────────────────────────────
-      let _acItems = [];        // 현재 표시 중인 후보 엔트리
-      let _acActive = -1;       // 키보드 선택 인덱스
-      let _acDebounce = null;
+      // ── 드롭다운 UI (anima-webgpu 포팅, textarea 1개) ──
+      // 기존 onFinalEditInput(상태/뱃지 동기화)은 그대로 호출하고, 자동완성은 이쪽이 담당.
+      function makeAutocomplete(taId, popId) {
+        const ta = document.getElementById(taId);
+        const pop = document.getElementById(popId);
+        if (!ta || !pop) return;
+        let items = [];
+        let active = -1;
+        let token = null;
+        let debounce = 0;
 
-      // 커서가 위치한 쉼표 구간(현재 편집 중인 토큰)의 [시작, 끝, 텍스트] 반환.
-      function _currentToken(ta) {
-        const v = ta.value;
-        const pos = ta.selectionStart;
-        let start = v.lastIndexOf(",", pos - 1) + 1;   // 직전 쉼표 다음
-        let end = v.indexOf(",", pos);
-        if (end === -1) end = v.length;
-        return { start, end, text: v.substring(start, end).trim() };
-      }
-
-      function onAcInput() {
-        const ta = document.getElementById("final_prompt_edit");
-        if (!ta) return;
-        if (_acDebounce) clearTimeout(_acDebounce);
-        _acDebounce = setTimeout(() => {
-          const tok = _currentToken(ta);
-          if (!tok.text || tok.text.length < 1 || acEntries.length === 0) { hideAc(); return; }
-          _acItems = searchAutocomplete(tok.text, 20);
-          if (_acItems.length === 0) { hideAc(); return; }
-          _acActive = -1;
-          renderAc();
-        }, 120);
-      }
-
-      function renderAc() {
-        const dd = document.getElementById("ac_dropdown");
-        if (!dd) return;
-        dd.innerHTML = _acItems.map((e, i) => {
-          const pc = e.postCount >= 1000 ? (e.postCount / 1000).toFixed(0) + "k" : String(e.postCount);
-          return '<div class="ac-item' + (i === _acActive ? " active" : "") +
-            '" data-i="' + i + '" onmousedown="acPick(' + i + ')">' +
-            '<span class="ac-tag">' + escapeHtml(e.tag) + '</span>' +
-            '<span class="ac-count">' + pc + '</span></div>';
-        }).join("");
-        dd.style.display = "block";
-      }
-
-      function hideAc() {
-        const dd = document.getElementById("ac_dropdown");
-        if (dd) { dd.style.display = "none"; dd.innerHTML = ""; }
-        _acItems = []; _acActive = -1;
-      }
-
-      // 선택한 태그를 현재 토큰 자리에 삽입(영어 태그 그대로, 언더스코어 유지).
-      function acPick(i) {
-        const ta = document.getElementById("final_prompt_edit");
-        if (!ta || !_acItems[i]) return;
-        const tok = _currentToken(ta);
-        const before = ta.value.substring(0, tok.start);
-        const after = ta.value.substring(tok.end);
-        const tag = _acItems[i].tag;
-        // 앞부분 끝 공백 정리 후 "태그" 삽입, 뒤에 쉼표+공백.
-        const left = before.replace(/\s*$/, "");
-        const sep = left && !left.endsWith(",") ? ", " : (left ? " " : "");
-        const insert = (left ? left + (left.endsWith(",") ? " " : sep) : "") + tag;
-        const newVal = insert + ", " + after.replace(/^\s*,?\s*/, "");
-        ta.value = newVal.replace(/,\s*,/g, ",").replace(/,\s*$/, ", ");
-        // 커서를 삽입한 태그 뒤로
-        const caret = insert.length + 2;
-        ta.setSelectionRange(caret, caret);
-        ta.focus();
-        hideAc();
-        onFinalEditInput();   // 상태 동기화(뱃지는 blur 때 갱신)
-      }
-
-      function onAcKeydown(e) {
-        const dd = document.getElementById("ac_dropdown");
-        if (!dd || dd.style.display === "none" || _acItems.length === 0) return;
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          _acActive = (_acActive + 1) % _acItems.length;
-          renderAc(); _scrollAcIntoView();
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          _acActive = (_acActive - 1 + _acItems.length) % _acItems.length;
-          renderAc(); _scrollAcIntoView();
-        } else if (e.key === "Enter" && _acActive >= 0) {
-          e.preventDefault();
-          acPick(_acActive);
-        } else if (e.key === "Escape") {
-          hideAc();
+        function close() {
+          pop.innerHTML = "";
+          pop.style.display = "none";
+          items = []; active = -1; token = null;
         }
-      }
+        function render() {
+          if (!items.length) { close(); return; }
+          const q = token ? token.query : "";
+          pop.innerHTML = items.map((r, i) => {
+            const aliasHtml = r.alias ? `<span class="ac-alias">${acHighlight(r.alias, q)}</span>` : "";
+            const catHtml = r.cat ? `<span class="ac-badge ac-badge-cat">${acEscape(r.cat)}</span>` : "";
+            return (
+              `<div class="ac-item${i === active ? " active" : ""}" data-i="${i}">` +
+              `<div class="ac-row1">` +
+              `<span class="ac-tag">${acHighlight(r.tag.replace(/_/g, " "), q)}</span>` +
+              `<span class="ac-count">${acFmtCount(r.pc)}</span>` +
+              `</div>` +
+              `<div class="ac-row2">${catHtml}${aliasHtml}</div>` +
+              `</div>`
+            );
+          }).join("");
+          pop.style.display = "block";
+          [...pop.children].forEach((el) => {
+            el.onmousedown = (e) => { e.preventDefault(); choose(+el.dataset.i); };
+          });
+          scrollActiveIntoView();
+        }
+        function scrollActiveIntoView() {
+          if (active < 0) return;
+          const el = pop.children[active];
+          if (el) el.scrollIntoView({ block: "nearest" });
+        }
+        // 선택 → 영어 태그를 현재 토큰 단어부에 치환(언더스코어 유지). 뱃지 동기화.
+        function choose(i) {
+          const r = items[i];
+          if (!r || !token) return close();
+          const before = ta.value.slice(0, token.wordStart);
+          const after = ta.value.slice(token.wordEnd);
+          const tagOut = r.tag;   // danbooru 태그는 언더스코어 유지(뱃지가 표기 설정 반영)
+          const trimmedAfter = after.replace(/^\s*/, "");
+          const needsComma = !trimmedAfter.startsWith(",");
+          const insert = tagOut + (needsComma ? ", " : "");
+          const newCaret = before.length + insert.length;
+          ta.value = before + insert + after;
+          ta.setSelectionRange(newCaret, newCaret);
+          ta.focus();
+          close();
+          if (typeof onFinalEditInput === "function") onFinalEditInput();
+        }
+        function update() {
+          if (!ac.ready) { acEnsureLoaded(); return; }
+          const caret = ta.selectionStart;
+          token = acCurrentToken(ta.value, caret);
+          const q = token.query;
+          if (!q || q.length < 1) { close(); return; }
+          items = acSearch(q);
+          active = items.length ? 0 : -1;
+          render();
+        }
 
-      function _scrollAcIntoView() {
-        const dd = document.getElementById("ac_dropdown");
-        if (!dd) return;
-        const el = dd.querySelector('.ac-item[data-i="' + _acActive + '"]');
-        if (el) el.scrollIntoView({ block: "nearest" });
+        ta.addEventListener("input", () => {
+          clearTimeout(debounce);
+          debounce = setTimeout(update, 150);
+        });
+        ta.addEventListener("keydown", (e) => {
+          if (!items.length) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); active = (active + 1) % items.length; render(); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); }
+          else if (e.key === "Enter" || e.key === "Tab") { if (active >= 0) { e.preventDefault(); choose(active); } }
+          else if (e.key === "Escape") { e.preventDefault(); close(); }
+        });
+        ta.addEventListener("blur", () => setTimeout(close, 120));
+        ta.addEventListener("click", () => { clearTimeout(debounce); debounce = setTimeout(update, 150); });
       }
 
       function parsePassthroughNames() {
