@@ -35,8 +35,14 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 
 - **임베딩**: `google/embeddinggemma-2`(텍스트 인코더만, 768차원) + 인덱스 `nt`입니다. `nt`는 새 한국어 소스(`mengod-hf/danbooru-tags-kr`)의 정의·별칭을 모델 카드 형식(`title: 태그명 | text: 정의 별칭`)으로 임베딩합니다. CPU 쿼리는 e5-large보다 빠릅니다(56ms vs 103ms).
 - **왜 바꿨나**: tag-embedding 벤치에서 같은 LLM(gemma4 26B A4B)과 같은 10문장으로 비교했습니다.
-  - 필수 개념 충족률이 기존 4회 분해 82%에서 v3 95%로 올랐습니다(같은 조건 Claude 95~98%).
-  - 같은 입력을 두 번 돌리면 결과가 10/10 같습니다(temperature 0, `cache_prompt=false`, 고정 seed).
+  - 필수 개념 충족률이 기존 4회 분해 82%에서 v3 94~95%로 올랐습니다(같은 조건 Claude 95~98%).
+  - 인원수 시험(40문장)에서 한국어 95%를 맞혔습니다(동물·관계어·캐릭터 이름 포함).
+- **속도**(llama.cpp, CPU 임베딩): 요청 전체(자연어 포함)가 약 14~19초입니다. 기존 4회 분해 운영 실측은 16~27초였습니다.
+  - 프롬프트 캐시를 켰습니다(`V3_CACHE_PROMPT`, 기본 on).
+  - 출력 JSON을 압축했습니다(선택 225 → 34토큰, 분해 160 → 약 80토큰).
+  - 질의 임베딩을 한 번에 묶었습니다.
+  - 캐시를 켜면 같은 입력을 두 번 돌렸을 때 결과가 조금 다를 수 있습니다(분해 8/10 동일, 채점 점수는 같음). `V3_CACHE_PROMPT=off`면 10/10 같지만 호출당 3~5초 느립니다.
+  - 캐시를 켠 호출에서 드물게 스키마를 벗어난 반복 출력이 나오면, 캐시를 끄고 한 번 재시도합니다.
   - 기존 방식의 실패 사례는 세 가지였습니다.
     - "단발머리 소년"처럼 인물에 붙은 속성이 인원수 조각으로 통째로 빠짐
     - 후보 밖 태그를 지어냄(`silver_hair`)
@@ -178,7 +184,7 @@ Both are blocked structurally.
 4. Final = headcount tags + character tags + selected tags/phrases (+ DB-existence and cosplay double guard)
 5. Natural-language prompt (tones unchanged)
 
-Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `nt` (definitions/aliases from the `mengod-hf/danbooru-tags-kr` source, embedded in the model card's `title: <tag> | text: <definition aliases>` format). On a 10-sentence benchmark with the same LLM (gemma4 26B A4B), required-concept coverage went from 82% (previous 4-call pipeline) to 95%, and two runs were 10/10 identical. Set `EMBEDDING_PROFILE=e5` to return to e5-large and the previous pipeline below (`PIPELINE=decomposed` switches only the pipeline).
+Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `nt` (definitions/aliases from the `mengod-hf/danbooru-tags-kr` source, embedded in the model card's `title: <tag> | text: <definition aliases>` format). On a 10-sentence benchmark with the same LLM (gemma4 26B A4B), required-concept coverage went from 82% (previous 4-call pipeline) to 94-95%, headcount accuracy on a 40-sentence set is 95%, and a full request takes about 14-19 s on the same server (the previous pipeline measured 16-27 s) thanks to prompt caching (`V3_CACHE_PROMPT`, default on), compact JSON output and batched query embedding. Set `EMBEDDING_PROFILE=e5` to return to e5-large and the previous pipeline below (`PIPELINE=decomposed` switches only the pipeline).
 
 Previous 4-call pipeline (`PIPELINE=decomposed`, default for the e5 profile):
 

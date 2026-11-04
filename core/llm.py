@@ -18,6 +18,7 @@ from .config import (
     LLM_API_URL,
     LLM_MODEL,
     LLM_THINKING_ENABLED,
+    V3_CACHE_PROMPT,
 )
 from .exceptions import LLMError
 
@@ -241,8 +242,23 @@ async def _call_json(
       (코드펜스·뒷말 없이 스키마에 맞는 JSON 만 나옴. 서버 b12004 에서 확인).
     - thinking 은 항상 끈다: 선택 프롬프트(~2천 토큰)에서 사고가 6천 토큰을 넘겨
       슬롯 컨텍스트 8192 를 다 쓰고 본문이 비는 실패가 40% 나왔다(벤치 실측).
-    - temperature 0 + cache_prompt=false + 고정 seed: 같은 입력 두 번 실행이 10/10 동일(벤치 실측).
+    - temperature 0 + 고정 seed. 프롬프트 캐시는 config.V3_CACHE_PROMPT(기본 켬):
+      켜면 시스템 프롬프트를 다시 처리하지 않아 호출당 3~5초 빠르다(이 서버는 프롬프트 처리 ~150~200 tok/s).
+      대신 같은 입력 두 번 실행이 분해 8/10·선택 9/10 만 동일(점수는 같음). 끄면 10/10 동일(벤치 실측).
+    - 캐시를 켠 호출에서 드물게(벤치 69회 중 1회, 영어 입력) 스키마를 벗어난 혼잣말이 출력 한도까지 반복됐다.
+      같은 입력을 캐시 끄고 보내면 정상 → 응답이 비거나·JSON 이 깨지거나·한도에 걸리면 캐시를 끄고 1회 재시도.
+    - 출력 한도 512: 분해·선택 출력은 100토큰 안팎이라 충분하고, 실패 시 낭비 시간을 줄인다(~38 tok/s).
     """
+    try:
+        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, V3_CACHE_PROMPT)
+    except LLMError as e:
+        if not V3_CACHE_PROMPT:
+            raise
+        logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
+        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)
+
+
+async def _call_json_once(system, user, schema, name, temperature, seed, timeout, cache_prompt) -> dict:
     payload = {
         "model": LLM_MODEL,
         "messages": [
@@ -251,10 +267,10 @@ async def _call_json(
         ],
         "temperature": temperature,
         "top_p": 1.0,
-        "max_tokens": 2048,
+        "max_tokens": 512,
         "thinking_budget_tokens": 0,
         "chat_template_kwargs": {"enable_thinking": False},
-        "cache_prompt": False,
+        "cache_prompt": cache_prompt,
         "seed": seed,
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
     }
@@ -267,8 +283,9 @@ async def _call_json(
             raise LLMError(f"LLM 호출 실패: {e}")
     choice = data["choices"][0]
     content = (choice["message"].get("content") or "").strip()
-    if not content:
-        raise LLMError(f"LLM 응답 본문 없음 (finish={choice.get('finish_reason')}, usage={data.get('usage')})")
+    finish = choice.get("finish_reason")
+    if not content or finish == "length":
+        raise LLMError(f"LLM 응답 본문 없음 또는 출력 한도 (finish={finish}, usage={data.get('usage')})")
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:

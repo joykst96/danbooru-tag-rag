@@ -1,20 +1,27 @@
 """
-v3 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택).
+v3 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택). 2026-11-05 v4(속도판)로 갱신.
 
-tag-embedding 벤치 gen_test/gemma_v3.py 의 프롬프트와 글자 단위로 같다(그대로 옮김).
-벤치에서 gemma4 26B A4B(IQ4_XS)로 10문장 개념 충족률 95%/95% (Claude 95%/98%), 두 번 실행 10/10 동일.
-예시는 모두 벤치 시험 문장에 없는 개념으로만 만들었다(정답 유출 방지). 예시를 바꿀 때도 이 원칙을 지킬 것.
-
-v1(기존 4회 분해) 대비 바뀐 점과 근거는 pipeline_v3.py 머리말 참고.
+tag-embedding 벤치 gen_test/gemma_v4.py 의 프롬프트·스키마와 글자 단위로 같다(그대로 옮김).
+판단 규칙은 v3 와 같고, 바뀐 것은 출력 형식(압축)과 인원수 규칙이다.
+  - 분해 출력: {"girls","boys","others","characters":[[ko,en]],"units":[[ko,en]]}  (v3 160토큰 → 약 80토큰)
+  - 선택 출력: {"u0":[0],"u1":"phrase"}  (v3 225토큰 → 약 34토큰)
+  - 인원수: 동물은 사람 아님 / 이름·관계어로 성별 추론 / others 는 성별을 알 수 없을 때만
+벤치(gemma4 26B A4B IQ4_XS) 10문장 개념 충족 94~95% (v3 95%), 분해+검색+선택 약 13초 (v3 약 30초).
+예시는 벤치 시험 문장에 없는 개념으로만 만들었다(정답 유출 방지). 예시를 바꿀 때도 이 원칙을 지킬 것.
 """
 
-# ── 1. 구조화 분해: {people, characters, units[{ko, en}]} ──
+# ── 1. 구조화 분해 ──
 SYSTEM_DECOMPOSE = """You turn a Korean anime-image description into structured search units for a Danbooru tag database.
 
-Output three lists:
-- people: who is in the image, as counts. type is "girl" (any female: 소녀, 여자, 여성, 마녀, 여경찰 ...), "boy" (any male: 소년, 남자, 남성 ...) or "other". Named characters also count as people.
-- characters: named existing characters or series (e.g. 프리렌, 라이덴 쇼군, 원신). Generic roles like 메이드, 간호사, 마법사 are NOT characters.
-- units: every other visual element, ONE concept per unit: hair color, hairstyle, eyes, accessory, clothing item, role/job, body feature, expression, pose, action, held object, place, background element, weather, time of day, lighting.
+Output:
+- girls / boys / others: how many people are in the image. Count only humans and human-like characters.
+  Animals, objects, pictures and body parts are never people.
+  girls = any female (소녀, 여자, 여성, 마녀, 여경찰 ...), boys = any male (소년, 남자, 남성 ...).
+  Infer the gender from character names and relation words: "신랑과 신부" -> 1 boy, 1 girl; "삼촌과 조카딸" -> 1 boy, 1 girl;
+  "카구야와 시로가네" -> 1 girl, 1 boy; "말 세 마리" -> nobody. Use others only when the gender truly cannot be known.
+  Named characters also count as people.
+- characters: named existing characters or series as [Korean, English] (e.g. 프리렌, 라이덴 쇼군, 원신). Generic roles like 메이드, 간호사, 마법사 are NOT characters.
+- units: every other visual element as [Korean, English], ONE concept per unit: hair color, hairstyle, eyes, accessory, clothing item, role/job, body feature, expression, pose, action, held object, place, background element, weather, time of day, lighting.
 
 RULES
 1. Person words never carry attributes. Split the attribute off into its own unit and put only the person into people.
@@ -35,37 +42,33 @@ RULES
 4. ko: the unit in short Korean as written in the sentence. en: a short lowercase English tag-like phrase for the SAME concept, translated with the whole sentence as context ("골목" -> "alley", "웅크리고" -> "squatting", "흑발" -> "black hair", "하품하며" -> "yawning").
 5. Drop filler with no visual meaning (~하는 장면, ~인 모습, 있다).
 
-Return ONLY JSON matching the schema."""
+Return ONLY compact JSON on a single line, matching the schema."""
 
 SCHEMA_DECOMPOSE = {'type': 'object',
- 'properties': {'people': {'type': 'array',
-                           'items': {'type': 'object',
-                                     'properties': {'count': {'type': 'integer', 'minimum': 1, 'maximum': 6},
-                                                    'type': {'type': 'string',
-                                                             'enum': ['girl', 'boy', 'other']}},
-                                     'required': ['count', 'type'],
-                                     'additionalProperties': False}},
+ 'properties': {'girls': {'type': 'integer', 'minimum': 0, 'maximum': 6},
+                'boys': {'type': 'integer', 'minimum': 0, 'maximum': 6},
+                'others': {'type': 'integer', 'minimum': 0, 'maximum': 6},
                 'characters': {'type': 'array',
-                               'items': {'type': 'object',
-                                         'properties': {'ko': {'type': 'string'}, 'en': {'type': 'string'}},
-                                         'required': ['ko', 'en'],
-                                         'additionalProperties': False}},
+                               'items': {'type': 'array',
+                                         'items': {'type': 'string'},
+                                         'minItems': 2,
+                                         'maxItems': 2}},
                 'units': {'type': 'array',
-                          'items': {'type': 'object',
-                                    'properties': {'ko': {'type': 'string'}, 'en': {'type': 'string'}},
-                                    'required': ['ko', 'en'],
-                                    'additionalProperties': False}}},
- 'required': ['people', 'characters', 'units'],
+                          'items': {'type': 'array',
+                                    'items': {'type': 'string'},
+                                    'minItems': 2,
+                                    'maxItems': 2}}},
+ 'required': ['girls', 'boys', 'others', 'characters', 'units'],
  'additionalProperties': False}
 
-# ── 2. 조각별 선택: 후보 번호(enum)만 고를 수 있는 스키마는 호출 시 조각마다 만든다 (pipeline_v3._select) ──
+# ── 2. 조각별 선택 (스키마는 호출 시 조각마다 만든다: pipeline_v3.select) ──
 SYSTEM_SELECT = """You choose Danbooru tags for each search unit of an anime image description.
 
 You get the original Korean sentence and, for each unit (u0, u1, ...), its Korean text, its English meaning, and numbered candidate tags from the database with their Korean definitions.
 
-For EACH unit return:
-- pick: the numbers of the candidates that mean the SAME thing as the unit in this sentence. Usually one. Two only if both truly apply.
-- phrase: null when pick is not empty. When NO candidate matches, pick = [] and phrase = a short English phrase (2-5 words) for the unit.
+For EACH unit return either:
+- a list of the numbers of the candidates that mean the SAME thing as the unit in this sentence (usually one, two only if both truly apply), or
+- only when NO candidate matches, a short English phrase (2-5 words) for the unit, as a string.
 
 A candidate matches only if it depicts the same thing. Sharing a word is not enough. Reject near-misses:
 - unit "헬멧 / helmet" (worn): "helmet_removed" or "holding_helmet" is wrong; "helmet" is right.
@@ -82,4 +85,4 @@ Cover the whole unit. If a unit has two aspects (an action and an object, or a p
 - unit "벽난로 앞 / in front of fireplace": pick "fireplace".
 Do not leave a unit empty or use a phrase while a candidate expresses it.
 
-Return ONLY JSON matching the schema."""
+Return ONLY compact JSON on a single line, like {"u0":[0],"u1":[2,4],"u2":"by the window"}."""

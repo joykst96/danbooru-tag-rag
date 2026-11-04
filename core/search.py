@@ -415,3 +415,24 @@ def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
         if r and r["category"] in categories:
             out.append({**r, "score": None})
     return out
+
+
+def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:
+    """
+    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (v3 속도판).
+    search_prefiltered 와 결과 형식이 같다. categories[i] 는 texts[i] 의 카테고리 집합.
+    """
+    if not texts:
+        return []
+    vecs = EmbeddingManager.embed_queries(texts)
+    tbl = get_db(variant).table
+    out: list[list[dict]] = []
+    for v, cats in zip(vecs, categories):
+        where = f"category IN ({', '.join(str(c) for c in sorted(cats))})"
+        rows = tbl.search(v).where(where, prefilter=True).limit(top_k).to_list()
+        out.append([{
+            "tag": r["tag"], "category": r["category"], "definition": r.get("definition") or "",
+            "aliases": list(r.get("aliases") or []),
+            "score": round(distance_to_similarity(r["_distance"]), 4),
+        } for r in rows])
+    return out

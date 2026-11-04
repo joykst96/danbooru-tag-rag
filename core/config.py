@@ -191,6 +191,8 @@ if PIPELINE not in ("v3", "decomposed"):
     raise ValueError(f"PIPELINE 은 v3 또는 decomposed 여야 합니다: {PIPELINE!r}")
 
 # v3 의 구조화 호출(분해·선택) 설정. 벤치 실측(gemma4 26B A4B IQ4_XS):
-#   temperature 0 + cache_prompt=false + 고정 seed 에서 두 번 실행 결과가 10/10 동일.
-#   thinking 은 선택 프롬프트에서 슬롯 컨텍스트(8192)를 다 써 40% 실패 → v3 구조화 호출은 항상 off.
+#   temperature 0 + 고정 seed. thinking 은 선택 프롬프트에서 슬롯 컨텍스트(8192)를 다 써 40% 실패 → 항상 off.
+#   프롬프트 캐시(V3_CACHE_PROMPT, 기본 on): 켜면 호출당 3~5초 빠르고(시스템 프롬프트 재처리 없음),
+#   두 번 실행 결과가 분해 8/10·선택 9/10 동일(채점 점수는 같음). off 면 10/10 동일하지만 느리다.
 V3_SEED = int(os.environ.get("V3_SEED", "1234"))
+V3_CACHE_PROMPT = os.environ.get("V3_CACHE_PROMPT", "on").lower() not in ("off", "false", "0", "no", "")
