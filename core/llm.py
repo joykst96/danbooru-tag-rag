@@ -230,6 +230,51 @@ async def _call(system: str, user: str, temperature: float, timeout: float = 120
             raise LLMError(f"LLM 호출 실패: {e}")
 
 
+async def _call_json(
+    system: str, user: str, schema: dict, name: str,
+    temperature: float = 0.0, seed: int = 1234, timeout: float = 180.0,
+) -> dict:
+    """
+    JSON 스키마 강제 호출 (v3 파이프라인 전용, 기존 _call 과 별개).
+
+    - response_format=json_schema: llama.cpp 가 스키마 문법으로 디코딩을 제한한다
+      (코드펜스·뒷말 없이 스키마에 맞는 JSON 만 나옴. 서버 b12004 에서 확인).
+    - thinking 은 항상 끈다: 선택 프롬프트(~2천 토큰)에서 사고가 6천 토큰을 넘겨
+      슬롯 컨텍스트 8192 를 다 쓰고 본문이 비는 실패가 40% 나왔다(벤치 실측).
+    - temperature 0 + cache_prompt=false + 고정 seed: 같은 입력 두 번 실행이 10/10 동일(벤치 실측).
+    """
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": temperature,
+        "top_p": 1.0,
+        "max_tokens": 2048,
+        "thinking_budget_tokens": 0,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "cache_prompt": False,
+        "seed": seed,
+        "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            resp = await client.post(LLM_API_URL, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            raise LLMError(f"LLM 호출 실패: {e}")
+    choice = data["choices"][0]
+    content = (choice["message"].get("content") or "").strip()
+    if not content:
+        raise LLMError(f"LLM 응답 본문 없음 (finish={choice.get('finish_reason')}, usage={data.get('usage')})")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise LLMError(f"LLM JSON 파싱 실패: {e}; 앞부분={content[:200]!r}")
+
+
 def _extract_json_array(content: str) -> list[str]:
     """응답에서 JSON 문자열 배열을 추출. 실패 시 빈 리스트.
 

@@ -43,16 +43,42 @@ EMBEDDING_MODEL_HF_ID = "intfloat/multilingual-e5-large"
 # 로컬에 받아둔 모델 폴더명
 EMBEDDING_MODEL_LOCAL_NAME = "multilingual-e5-large"
 
+# ── 임베딩 프로필 (2026-11-05) ──
+# "gemma2": google/embeddinggemma-2 + 새 한국어 소스(nt 인덱스). 기본값.
+# "e5"    : 기존 multilingual-e5-large + a/b/c 인덱스. 되돌리기용 안전망(코드 경로 그대로 보존).
+# 근거·실측: tag-embedding 벤치 README (임베딩 모델 비교, 접두사 실험 nt/ns, gemma v3).
+EMBEDDING_PROFILE = os.environ.get("EMBEDDING_PROFILE", "gemma2").strip().lower()
+if EMBEDDING_PROFILE not in ("gemma2", "e5"):
+    raise ValueError(f"EMBEDDING_PROFILE 은 gemma2 또는 e5 여야 합니다: {EMBEDDING_PROFILE!r}")
+
+# embeddinggemma-2 설정 (모델 카드 + 벤치 실측으로 확인)
+#   - 텍스트 인코더만 로드(vision/audio 제외 → 270M). float16 금지(NaN), fp32 로 고정.
+#   - 쿼리: 내장 프롬프트 SearchQuery ("task: search result | query: ").
+#   - 문서: 빌더가 "title: {태그명} | text: {정의 별칭}" 을 직접 만들고 프롬프트 없이 인코딩(nt 형식).
+#   - max_seq 8192 를 명시해야 함(토크나이저 기본값은 1e30 센티널).
+#   - 빌드 배치는 토큰 예산으로 나눔(기본 예산이면 peak VRAM 19GB).
+GEMMA2_HF_ID = "google/embeddinggemma-2"
+GEMMA2_LOCAL_NAME = "embeddinggemma-2"
+GEMMA2_QUERY_PROMPT = "SearchQuery"
+GEMMA2_CONFIG_KWARGS = {"vision_config": None, "audio_config": None}
+GEMMA2_MAX_SEQ_LENGTH = 8192
+GEMMA2_TOKEN_BUDGET = 32768
+GEMMA2_DIM = 768
+
+
 # 실제 로드 경로: 로컬 폴더가 있으면 그걸, 없으면 HF ID로 폴백
 def get_embedding_model_path() -> str:
     """로컬 모델 폴더가 존재하면 그 경로를, 없으면 HF ID 문자열을 반환."""
+    if EMBEDDING_PROFILE == "gemma2":
+        local_path = MODELS_DIR / GEMMA2_LOCAL_NAME
+        return str(local_path) if local_path.exists() else GEMMA2_HF_ID
     local_path = MODELS_DIR / EMBEDDING_MODEL_LOCAL_NAME
     if local_path.exists():
         return str(local_path)
     return EMBEDDING_MODEL_HF_ID
 
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = GEMMA2_DIM if EMBEDDING_PROFILE == "gemma2" else 1024
 MAX_SEQ_LENGTH = 512
 
 # 디바이스: 'cuda' / 'cpu' / None(자동). 환경변수 EMBEDDING_DEVICE로 제어.
@@ -105,10 +131,23 @@ MIN_FREQUENCY = 50
 # 각 variant 는 별도 LanceDB 디렉토리 + 테이블로 저장되어 독립 비교 가능.
 INDEX_VARIANTS = ("a", "b", "c")
 DEFAULT_VARIANT = "a"
+# 본선 variant (API·파이프라인이 쓰는 인덱스). e5 는 기존 확정값 B.
+MAIN_VARIANT = "b"
+
+# gemma2 프로필: 인덱스는 nt 하나.
+#   nt = 새 한국어 소스(mengod-hf/danbooru-tags-kr, core/kr2.py)의 정의·별칭으로 바꾼 태그를
+#        "title: {태그명} | text: {정의} {별칭}" 으로 임베딩 (정의·별칭이 없으면 "title: none | text: {태그명}").
+#   태그 집합은 danbooru-tags.csv 그대로(114,092). 경로를 모델별 폴더로 분리해 e5 인덱스와 섞이지 않게 한다.
+if EMBEDDING_PROFILE == "gemma2":
+    INDEX_VARIANTS = ("nt",)
+    DEFAULT_VARIANT = "nt"
+    MAIN_VARIANT = "nt"
 
 
 def get_lancedb_path(variant: str) -> Path:
     """variant('a'|'b')에 해당하는 LanceDB 디렉토리 경로."""
+    if EMBEDDING_PROFILE == "gemma2":
+        return DATA_DIR / GEMMA2_LOCAL_NAME / f"lancedb_{variant}"
     return DATA_DIR / f"lancedb_{variant}"
 
 
@@ -137,3 +176,21 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4")
 LLM_THINKING_ENABLED = os.environ.get("LLM_THINKING", "off").lower() not in (
     "off", "false", "0", "no", ""
 )
+
+# ---------------------------------------------------------------------------
+# 기본 모드 파이프라인 선택 (2026-11-05)
+# ---------------------------------------------------------------------------
+# "v3"        : 구조화 분해 → 조각별(한국어+영어+어휘일치) 후보 → 번호 선택 (core/pipeline_v3.py). 기본값.
+# "decomposed": 기존 4회 분해 파이프라인 (core/pipeline_decomposed.py). 되돌리기용.
+# 고급(분할) 모드는 두 경우 모두 기존 pipeline_split 을 그대로 쓴다.
+# 기본값은 임베딩 프로필을 따른다: gemma2 → v3, e5 → decomposed.
+#   EMBEDDING_PROFILE=e5 하나만 바꾸면 이전 배포와 같은 동작으로 완전히 돌아간다.
+#   (v3 는 gemma2 nt 인덱스에서만 측정했다. e5 + v3 조합은 PIPELINE=v3 로 명시해야 켜진다.)
+PIPELINE = os.environ.get("PIPELINE", "v3" if EMBEDDING_PROFILE == "gemma2" else "decomposed").strip().lower()
+if PIPELINE not in ("v3", "decomposed"):
+    raise ValueError(f"PIPELINE 은 v3 또는 decomposed 여야 합니다: {PIPELINE!r}")
+
+# v3 의 구조화 호출(분해·선택) 설정. 벤치 실측(gemma4 26B A4B IQ4_XS):
+#   temperature 0 + cache_prompt=false + 고정 seed 에서 두 번 실행 결과가 10/10 동일.
+#   thinking 은 선택 프롬프트에서 슬롯 컨텍스트(8192)를 다 써 40% 실패 → v3 구조화 호출은 항상 off.
+V3_SEED = int(os.environ.get("V3_SEED", "1234"))

@@ -24,9 +24,13 @@ from pydantic import BaseModel, Field
 from .embeddings import EmbeddingManager
 from . import search as search_mod
 from .pipeline_decomposed import run_decomposed_pipeline, stream_decomposed_pipeline
+from .pipeline_v3 import stream_v3_pipeline
 from .pipeline_split import stream_split_pipeline, CharBlock
 from . import genlog
-from .config import PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K, CATEGORY_LABELS
+from .config import (
+    PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K, CATEGORY_LABELS,
+    MAIN_VARIANT, EMBEDDING_PROFILE, PIPELINE,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,8 +38,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 본선 variant 확정: B (실측 — 코드스위칭 분포서 영어태그명 포함 B가 최적)
-MAIN_VARIANT = "b"
+# 본선 variant 는 config.MAIN_VARIANT (임베딩 프로필에 따라 결정).
+#   e5    : B (실측 — 코드스위칭 분포서 영어태그명 포함 B가 최적)
+#   gemma2: nt (tag-embedding 벤치 실측, config.py 참고)
+# 기본 모드 파이프라인은 config.PIPELINE ("v3" | "decomposed").
 
 # ---------------------------------------------------------------------------
 # 생성 요청 직렬화 (동시 1개) + 실시간 대기열
@@ -141,10 +147,12 @@ logging.getLogger("core").setLevel(logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("임베딩 모델 프리로드 중...")
+    logger.info(f"임베딩 모델 프리로드 중... (embedding={EMBEDDING_PROFILE}, variant={MAIN_VARIANT}, pipeline={PIPELINE})")
     EmbeddingManager.get_model()
     try:
         search_mod.get_tagset(MAIN_VARIANT)
+        if PIPELINE == "v3":
+            search_mod.get_tag_rows(MAIN_VARIANT)   # v3 어휘 일치용 (첫 요청 지연 방지)
     except Exception as e:
         logger.warning(f"태그집합 프리로드 실패(첫 요청 시 재시도): {e}")
     logger.info("준비 완료")
@@ -234,16 +242,27 @@ async def generate(req: GenerateRequest, request: Request):
             async for w in _wait_for_turn(my):
                 yield w
 
-            # 내 차례 — 4스텝 스트리밍
-            async for ev in stream_decomposed_pipeline(
-                req.prompt,
-                general_variant=MAIN_VARIANT,
-                en_variant=MAIN_VARIANT,
-                top_k=5,
-                generate_nl=True,
-                search_categories=set(req.search_categories) if req.search_categories else None,
-                nl_tone=req.nl_tone,
-            ):
+            # 내 차례 — 4스텝 스트리밍 (이벤트 모양은 v3/decomposed 공통)
+            _cats = set(req.search_categories) if req.search_categories else None
+            if PIPELINE == "v3":
+                _events = stream_v3_pipeline(
+                    req.prompt,
+                    variant=MAIN_VARIANT,
+                    generate_nl=True,
+                    search_categories=_cats,
+                    nl_tone=req.nl_tone,
+                )
+            else:
+                _events = stream_decomposed_pipeline(
+                    req.prompt,
+                    general_variant=MAIN_VARIANT,
+                    en_variant=MAIN_VARIANT,
+                    top_k=5,
+                    generate_nl=True,
+                    search_categories=_cats,
+                    nl_tone=req.nl_tone,
+                )
+            async for ev in _events:
                 stage = ev["stage"]
                 d = ev["data"]
                 out: dict = {}
@@ -458,7 +477,7 @@ async def get_logs(after: int = 0):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "variant": MAIN_VARIANT}
+    return {"status": "ok", "variant": MAIN_VARIANT, "embedding": EMBEDDING_PROFILE, "pipeline": PIPELINE}
 
 
 # ---------------------------------------------------------------------------

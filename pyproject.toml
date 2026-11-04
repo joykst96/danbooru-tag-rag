@@ -2,7 +2,7 @@
 name = "danbooru-tags-rag"
 version = "0.1.0"
 description = "Korean-to-Danbooru tag search with hallucination-free 2-pass cross-lingual RAG (local embeddings + local LLM)"
-requires-python = ">=3.10"
+requires-python = ">=3.11"   # transformers>=5.22 요구. 배포 이미지는 python:3.12-slim
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
@@ -11,7 +11,8 @@ dependencies = [
     "lancedb>=0.6",
     "pylance>=1.0",
     "pandas>=2.0",
-    "sentence-transformers>=2.6",
+    "sentence-transformers>=6.1",   # embeddinggemma-2 요구 (모델 카드: 6.1 미만은 멀티모달 입력 순서 무시)
+    "transformers>=5.22",          # embeddinggemma-2 를 로드·검증한 버전(5.22.1). 모델 config 는 5.18.0.dev0 로 저장됨
     "tqdm>=4.66",
     "python-dotenv>=1.0",
 ]

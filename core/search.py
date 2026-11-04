@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 
 from .config import DEFAULT_TOP_K, DEFAULT_THRESHOLD, CATEGORY_LABELS
-from .database import TagDatabase, SearchResult
+from .database import TagDatabase, SearchResult, distance_to_similarity
 from .embeddings import EmbeddingManager
 
 logger = logging.getLogger(__name__)
@@ -345,3 +345,73 @@ _COSPLAY_RE = re.compile(r"\(cosplay\)\s*$", re.IGNORECASE)
 def drop_character_derived(tags: list[str]) -> list[str]:
     """결과에서 _(cosplay) 등 캐릭터 파생 태그를 제거(이중 방어)."""
     return [t for t in tags if not _COSPLAY_RE.search(t)]
+
+
+# ---------------------------------------------------------------------------
+# v3 파이프라인 전용 검색 (기존 함수와 별개 — 기존 경로 동작 불변)
+# ---------------------------------------------------------------------------
+# 1) 카테고리를 LanceDB where 사전 필터로 거른다.
+#    기존 TagDatabase.search 는 top_k*4 를 가져와 파이썬에서 거르는 사후 필터라, 상위권을 다른
+#    카테고리가 채우면 결과가 비는 경우가 있다(벤치 실측: "여기사" → 로마자 한국 작가명(cat1)이 top20
+#    을 채워 cat0 결과 0건).
+# 2) 어휘 일치: 영어 조각을 태그 표기로 바꿔 같은 이름의 태그가 DB 에 있으면 후보로 쓴다.
+#    (벤치 실측: nt 인덱스에서 "glasses" 질의 top5 에 glasses 가 없었다.)
+
+# variant별 '태그 → (카테고리, 정의, 별칭)' 캐시 (어휘 일치용). 벡터 컬럼은 읽지 않는다.
+_tagrow_cache: dict[str, dict[str, dict]] = {}
+
+
+def get_tag_rows(variant: str) -> dict[str, dict]:
+    """{tag: {"tag","category","definition","aliases"}} (1회 로드 후 캐시)."""
+    if variant not in _tagrow_cache:
+        tbl = get_db(variant).table
+        cols = ["tag", "category", "definition", "aliases"]
+        try:
+            d = tbl.to_lance().to_table(columns=cols).to_pydict()
+        except Exception:  # pylance 없는 환경 폴백
+            df = tbl.to_pandas()
+            d = {c: df[c].tolist() for c in cols}
+        _tagrow_cache[variant] = {
+            t: {"tag": t, "category": int(c), "definition": dfn or "",
+                "aliases": list(al) if al is not None else []}
+            for t, c, dfn, al in zip(d["tag"], d["category"], d["definition"], d["aliases"])
+        }
+        logger.info(f"태그 행 맵 로드 (variant={variant}): {len(_tagrow_cache[variant])}개")
+    return _tagrow_cache[variant]
+
+
+def search_prefiltered(texts: list[str], variant: str, categories: set[int], top_k: int = 5) -> list[list[dict]]:
+    """
+    texts 를 한 번에 임베딩하고 각각 where 사전 필터로 top_k 검색.
+    반환: 텍스트마다 [{"tag","category","definition","aliases","score"}...]
+    """
+    if not texts:
+        return []
+    vecs = EmbeddingManager.embed_queries(texts)
+    where = f"category IN ({', '.join(str(c) for c in sorted(categories))})"
+    tbl = get_db(variant).table
+    out: list[list[dict]] = []
+    for v in vecs:
+        rows = tbl.search(v).where(where, prefilter=True).limit(top_k).to_list()
+        out.append([{
+            "tag": r["tag"], "category": r["category"], "definition": r.get("definition") or "",
+            "aliases": list(r.get("aliases") or []),
+            "score": round(distance_to_similarity(r["_distance"]), 4),
+        } for r in rows])
+    return out
+
+
+def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
+    """영어 조각과 이름이 같은 태그(소문자·공백→_·단수/복수·관사 제거 변형). 없으면 []."""
+    rows = get_tag_rows(variant)
+    base = en.strip().lower().replace(" ", "_")
+    forms = [base, base.rstrip("s") if base.endswith("s") else base + "s"]
+    for art in ("a_", "an_", "the_"):
+        if base.startswith(art):
+            forms.append(base[len(art):])
+    out = []
+    for f in dict.fromkeys(forms):
+        r = rows.get(f)
+        if r and r["category"] in categories:
+            out.append({**r, "score": None})
+    return out

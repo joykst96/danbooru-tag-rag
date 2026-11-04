@@ -22,7 +22,28 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 - **환각 차단**: 최종 태그는 (1) LLM 프롬프트로 "후보 외 금지" 강제 + (2) 후보풀 대조 + (3) DB 실존 태그 코드필터, 삼중으로 거릅니다. LLM이 무엇을 생성하든 DB에 없으면 코드가 버립니다.
 - **세부 보존**: 단순 번역이 아니라 한국어 의미단위로 분해해 각각 검색하고, 실존 후보 중에서 원본 의도에 맞는 것을 LLM이 선택합니다.
 
-### 동작 흐름 (기본 모드)
+### 동작 흐름 (기본 모드, v3 — 2026-11-05~)
+
+```
+입력(한국어)
+ 1. 구조화 분해 (JSON 스키마 강제)  → 인원 / 캐릭터 / 조각[{한국어, 영어}]  (조각 하나 = 개념 하나)
+ 2. 조각별 후보                    → 어휘 일치 + 한국어 질의 top5 + 영어 질의 top5  (카테고리 where 사전 필터)
+ 3. 조각별 선택 (후보 번호만 허용)  → 맞는 후보가 없을 때만 짧은 영어 구
+ 4. 최종 = 인원수 태그 + 캐릭터 태그 + 선택 태그·구  (+ DB 실존·cosplay 이중 방어)
+ 5. 자연어 프롬프트 생성 (톤: 묘사적/담백/단어형+)
+```
+
+- **임베딩**: `google/embeddinggemma-2`(텍스트 인코더만, 768차원) + 인덱스 `nt`입니다. `nt`는 새 한국어 소스(`mengod-hf/danbooru-tags-kr`)의 정의·별칭을 모델 카드 형식(`title: 태그명 | text: 정의 별칭`)으로 임베딩합니다. CPU 쿼리는 e5-large보다 빠릅니다(56ms vs 103ms).
+- **왜 바꿨나**: tag-embedding 벤치에서 같은 LLM(gemma4 26B A4B)과 같은 10문장으로 비교했습니다.
+  - 필수 개념 충족률이 기존 4회 분해 82%에서 v3 95%로 올랐습니다(같은 조건 Claude 95~98%).
+  - 같은 입력을 두 번 돌리면 결과가 10/10 같습니다(temperature 0, `cache_prompt=false`, 고정 seed).
+  - 기존 방식의 실패 사례는 세 가지였습니다.
+    - "단발머리 소년"처럼 인물에 붙은 속성이 인원수 조각으로 통째로 빠짐
+    - 후보 밖 태그를 지어냄(`silver_hair`)
+    - 근접 오답(`arm_armor`, `hat_loss`)
+- **되돌리기**: `.env`의 `EMBEDDING_PROFILE=e5`로 e5-large와 기존 4회 분해 파이프라인(아래)으로 그대로 돌아갑니다. 파이프라인만 바꾸려면 `PIPELINE=decomposed`를 씁니다.
+
+기존 4회 분해 파이프라인(`PIPELINE=decomposed`, e5 프로필의 기본값):
 
 ```
 입력(한국어)
@@ -36,7 +57,7 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 ```
 
 - **캐릭터 해석(0단계)**: 한 문장에 캐릭터 이름이 있으면(예: "원신 라이덴 쇼군이 ...") 별도 입력 없이도 자동으로 잡습니다. (작품?, 캐릭터) 쌍을 LLM이 추출해 캐릭터·작품 카테고리에서 검색하고, 후보군을 한 번에 LLM이 판별합니다. 확정된 캐릭터 태그는 최종 출력 맨 앞에 오고, 작품 태그는 자연어에만 쓰며, 추출된 이름은 일반 검색에서 제거해 `xxx_(cosplay)` 류 오염을 막습니다. 캐릭터가 없으면 이 단계를 건너뛰어 기존 흐름 그대로 돕니다.
-- **2분할 DB**: 일반(cat 0) / 캐릭터·작품(cat 3,4)을 분리 검색합니다. 데이터셋이 작아 캐릭터 태그가 속성 검색을 오염시키는 현상(은발 → 특정 캐릭터)을 카테고리 필터로 차단합니다. 모든 카테고리(작가 1·메타 5 포함)를 인덱싱하되 프롬프트 파이프라인은 where절로 필요한 카테고리만 조회합니다(임베딩 벡터는 태그별 독립이라 상호 오염이 없습니다).
+- **2분할 DB**: 일반(cat 0) / 캐릭터·작품(cat 3,4)을 분리 검색합니다. 데이터셋이 작아 캐릭터 태그가 속성 검색을 오염시키는 현상(은발 → 특정 캐릭터)을 카테고리 필터로 차단합니다. 모든 카테고리(작가 1·메타 5 포함)를 인덱싱하되 프롬프트 파이프라인은 필요한 카테고리만 조회합니다(임베딩 벡터는 태그별 독립이라 상호 오염이 없습니다). v3는 LanceDB `where` 사전 필터를 씁니다. 기존 경로(`TagDatabase.search`)는 top_k×4를 가져와 거르는 사후 필터라서, 상위권을 다른 카테고리가 채우면 결과가 빌 수 있습니다(예: "여기사" → 로마자 작가명이 상위 20개를 채워 cat 0 결과 0건).
 - **인원수 보호 / 정렬**: 검색으로 확정하되 LLM 선별 단계에서 인원수 슬롯을 따로 보호해 다인물 장면이 solo로 뭉개지는 것을 막고, 인원수 태그(1girl, 2girls 등)를 최종 출력 맨 앞에 배치합니다.
 - **단계별 스트리밍**: 각 단계가 끝나는 즉시 UI에 표시합니다(키워드 먼저 보이고 최종은 나중). 동시 요청은 1개씩 직렬 처리하며 대기 순번을 실시간 표시합니다.
 
@@ -72,9 +93,11 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 
 ### 인덱스 variant
 
-임베딩 텍스트 구성이 다른 인덱스. 실측 결과 **B를 본선으로 확정**했습니다.
+- **nt** (본선, gemma2 프로필): 위 "임베딩" 참고. 경로는 `data/embeddinggemma-2/lancedb_nt`입니다.
 
-- **b** (본선): 영어 태그명 + 한국어 별칭. 실사용 입력의 한·영 코드스위칭 비율이 높아 영어 태그명 포함이 유리합니다.
+e5 프로필(되돌리기용)의 인덱스. 실측 결과 **B를 본선으로 확정**했었습니다.
+
+- **b** (e5 본선): 영어 태그명 + 한국어 별칭. 실사용 입력의 한·영 코드스위칭 비율이 높아 영어 태그명 포함이 유리합니다.
 - **c** (선택): 한국어 정의 + 별칭. 순수 한국어 의미검색용으로 남겨뒀습니다.
 - ~~a~~: 폐기했습니다(전부 포함했더니 신호가 평균으로 뭉개졌습니다).
 
@@ -83,8 +106,10 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 1. 의존성 설치: `uv sync` 또는 `pip install -e .`
 2. `.env` 작성 (LLM 엔드포인트, `EMBEDDING_DEVICE`)
 3. `danbooru-tags.csv`를 루트에 배치 (`name,category,post_count,description`)
-4. 임베딩 모델 다운로드(최초 1회): `python download_model.py`
-5. 인덱스 빌드: `python -m core.builder` (GPU 권장 — CPU는 매우 느립니다)
+4. 임베딩 모델 다운로드(최초 1회): `python download_model.py` (gemma2 프로필이면 `models/embeddinggemma-2`)
+5. 인덱스 빌드: `python -m core.builder` (GPU 권장 — CPU는 매우 느립니다). gemma2 프로필은 처음 실행할 때 새 한국어 소스 CSV를 HF에서 받습니다.
+
+> Python 3.11 이상, sentence-transformers 6.1 이상, transformers 5.22 이상이 필요합니다(embeddinggemma-2).
 
 > torch는 GPU 환경에 맞는 CUDA 빌드를 별도로 설치해야 합니다(예: cu130). `lancedb` 외에 `pylance`(lance 바인딩)와 `pandas`가 필요합니다(pyproject에 명시돼 있습니다).
 
@@ -111,13 +136,16 @@ curl http://localhost:3333/api/health
 |------|------|
 | `config.py` | 전역 설정 (`.env` 로드) |
 | `parser.py` | description 타입별 분기 파싱 + variant별 임베딩 텍스트 구성 |
-| `embeddings.py` | e5-large 임베딩 |
+| `embeddings.py` | 임베딩 (gemma2: embeddinggemma-2 / e5: e5-large) |
 | `database.py` | LanceDB (카테고리 필터 검색 지원) |
-| `builder.py` | CSV → variant 인덱스 빌드 |
-| `search.py` | 벡터검색 + 2분할(일반/캐릭터) + 환각필터용 태그집합 + 이름 오염차단 헬퍼 |
-| `llm.py` | LLM 호출 (분해 선별·캐릭터 선택·자연어·톤) |
+| `builder.py` | CSV → variant 인덱스 빌드 (nt 는 `kr2.py` 로 새 한국어 소스 적용) |
+| `kr2.py` | 새 한국어 소스(mengod-hf/danbooru-tags-kr) 로드·교체·nt 문서 텍스트 |
+| `search.py` | 벡터검색 + 2분할(일반/캐릭터) + 환각필터용 태그집합 + 이름 오염차단 헬퍼 + v3용 사전필터·어휘일치 |
+| `llm.py` | LLM 호출 (분해 선별·캐릭터 선택·자연어·톤, v3용 JSON 스키마 호출 `_call_json`) |
+| `llm_v3.py` | v3 구조화 분해 / 조각별 선택 프롬프트 |
+| `pipeline_v3.py` | **본선 파이프라인** (gemma2 프로필 기본) |
 | `llm_decompose.py` | 한국어 분해 / 통번역 분해 / 태그 완성 프롬프트 |
-| `pipeline_decomposed.py` | **본선 파이프라인** (캐릭터 해석 + 분해 + 완성 + 스트리밍) |
+| `pipeline_decomposed.py` | 기존 4회 분해 파이프라인 (`PIPELINE=decomposed`, e5 프로필 기본) |
 | `pipeline_split.py` | 고급(분할) 모드 파이프라인 (인물칸/배경칸) |
 | `pipeline.py` | 구버전 2-pass (벤치마크 비교 전용, 본선 아님) |
 | `genlog.py` | 생성 로그 (콘솔 + 파일 JSONL) |
@@ -142,7 +170,17 @@ Both are blocked structurally.
 - **Hallucination-free**: final tags pass a triple filter — LLM prompt constraint, candidate-pool check, and a DB-existence code filter. Whatever the LLM emits, anything absent from the DB is dropped by code.
 - **Detail preservation**: Korean is decomposed into semantic search units, each retrieved separately; the LLM selects from real candidates against the original intent.
 
-### Flow (basic mode)
+### Flow (basic mode, v3 — since 2026-11-05)
+
+1. Structured decomposition (JSON-schema constrained) → people / characters / units `{ko, en}` (one concept per unit)
+2. Per-unit candidates → exact tag-name match + Korean query top5 + English query top5 (category `where` prefilter)
+3. Per-unit selection by candidate number only → a short English phrase only when no candidate matches
+4. Final = headcount tags + character tags + selected tags/phrases (+ DB-existence and cosplay double guard)
+5. Natural-language prompt (tones unchanged)
+
+Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `nt` (definitions/aliases from the `mengod-hf/danbooru-tags-kr` source, embedded in the model card's `title: <tag> | text: <definition aliases>` format). On a 10-sentence benchmark with the same LLM (gemma4 26B A4B), required-concept coverage went from 82% (previous 4-call pipeline) to 95%, and two runs were 10/10 identical. Set `EMBEDDING_PROFILE=e5` to return to e5-large and the previous pipeline below (`PIPELINE=decomposed` switches only the pipeline).
+
+Previous 4-call pipeline (`PIPELINE=decomposed`, default for the e5 profile):
 
 0. Character resolution → extract (series?, character) pairs → cat3/4 retrieval → batched selection (skipped when no character is present)
 1. Decompose Korean + retrieve → Korean-unit candidates
@@ -168,7 +206,7 @@ Key structures: a **two-way DB split** (general vs character/series) to stop cha
 
 ### Index variant
 
-Variant **b** (English tag name + Korean aliases) is confirmed as the mainline from measurements — real-world input is heavily code-switched, so including English tag names helps. Variant **c** kept as an option; **a** dropped.
+With the default gemma2 profile the mainline index is **nt** (`data/embeddinggemma-2/lancedb_nt`). For the e5 profile (rollback), variant **b** (English tag name + Korean aliases) was confirmed as the mainline from measurements — real-world input is heavily code-switched, so including English tag names helps. Variant **c** kept as an option; **a** dropped.
 
 ### Setup / Run
 

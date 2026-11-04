@@ -20,10 +20,35 @@ from core.config import (
     EMBEDDING_MODEL_HF_ID,
     EMBEDDING_MODEL_LOCAL_NAME,
     MODELS_DIR,
+    EMBEDDING_PROFILE,
+    GEMMA2_HF_ID,
+    GEMMA2_LOCAL_NAME,
 )
 
 
+def download_gemma2():
+    """
+    embeddinggemma-2 를 레포 구조 그대로 받는다(약 1.5GB, 접근 제한 없음).
+    SentenceTransformer.save() 대신 snapshot_download 를 쓰는 이유: 로드 시 config_kwargs 로
+    vision/audio 인코더를 빼고 텍스트만 올리는데, save() 는 그렇게 줄인 모델 구조로 저장해 버릴 수 있다.
+    원본 파일을 그대로 두면 로드 옵션만으로 제어된다.
+    """
+    target_dir = MODELS_DIR / GEMMA2_LOCAL_NAME
+    if target_dir.exists() and any(target_dir.iterdir()):
+        print(f"이미 받아져 있음: {target_dir}")
+        return
+    from huggingface_hub import snapshot_download
+
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"모델 다운로드 시작: {GEMMA2_HF_ID} → {target_dir}")
+    snapshot_download(GEMMA2_HF_ID, local_dir=str(target_dir))
+    print(f"다운로드 완료: {target_dir}")
+
+
 def main():
+    if EMBEDDING_PROFILE == "gemma2":
+        download_gemma2()
+        return
     target_dir = MODELS_DIR / EMBEDDING_MODEL_LOCAL_NAME
 
     if target_dir.exists() and any(target_dir.iterdir()):

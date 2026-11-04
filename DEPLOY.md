@@ -6,18 +6,40 @@
 
 ```
 danbooru-tags-rag/
-├── data/                     # LanceDB 인덱스 — GPU 머신에서 빌드해 복사 (variant b 필수)
-│   ├── lancedb_b/            # ★ 본선. 없으면 검색 전부 실패
-│   ├── lancedb_c/            # 선택 (직접조회 비교용)
+├── data/                     # LanceDB 인덱스 — GPU 머신에서 빌드해 복사
+│   ├── embeddinggemma-2/
+│   │   └── lancedb_nt/       # ★ 본선 (기본 EMBEDDING_PROFILE=gemma2). 없으면 검색 전부 실패
+│   ├── lancedb_b/            # 되돌리기용 (EMBEDDING_PROFILE=e5 일 때 본선)
+│   ├── lancedb_c/            # e5 선택 (직접조회 비교용)
 │   └── lancedb_a/            # 폐기 — 안 올려도 됨
 ├── models/
-│   └── multilingual-e5-large/   # e5 모델 (download_model.py 산출물)
+│   ├── embeddinggemma-2/        # ★ gemma2 모델 (download_model.py 산출물, 약 1.5GB)
+│   └── multilingual-e5-large/   # 되돌리기용 e5 모델
 ├── danbooru-tags.csv         # 태그 호버 설명용 (UI가 /danbooru-tags.csv 로 fetch)
 ├── .env                      # 아래 참고
 ├── logs/                     # 생성 로그 저장 위치 (쓰기 가능, 자동 생성되나 미리 mkdir 권장)
 ├── index.html                # UI (이미지에 COPY됨 — 수정 시 --build 필요)
 ├── core/ Dockerfile docker-compose.yml pyproject.toml
 ```
+
+### 모델·인덱스 준비 (embeddinggemma-2, 2026-11-05~)
+
+```bash
+python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
+EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_nt (GPU 권장)
+```
+
+- 빌더는 처음 실행할 때 새 한국어 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다. 서빙 컨테이너는 이 CSV가 필요 없습니다(정의·별칭이 인덱스에 들어 있음).
+- 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.
+- 검증 기록(tag-embedding 벤치):
+  - 이 빌더가 만든 nt 인덱스는 벤치 인덱스와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
+  - 로컬 `models/` 폴더에서 불러온 모델과 HF 캐시에서 불러온 모델의 벡터 차이도 0입니다.
+
+### 되돌리기 (e5 + 기존 4회 분해 파이프라인)
+
+`.env`에 `EMBEDDING_PROFILE=e5` 한 줄만 넣고 재시작하면 됩니다. 파이프라인 기본값도 `decomposed`로 같이 돌아갑니다.
+이 경로는 코드가 그대로 보존돼 있습니다. 모델 호출 인자, 빌더 레코드, 인덱스 경로, 본선 variant가 변경 전과 같은지 기록을 떠서 비교했습니다.
+이때 `data/lancedb_b`와 `models/multilingual-e5-large`가 있어야 합니다.
 
 인덱스 빌드(data/)는 **GPU 머신에서** 수행해 서버로 복사하는 것을 권장합니다. CPU 빌드는 매우 느립니다(데이터셋 규모에 따라 수 시간). 임베딩 벡터는 device와 무관하게 동일하므로, CUDA로 빌드한 인덱스를 CPU 서빙에 그대로 쓸 수 있습니다(빌드 머신과 서빙 머신이 달라도 됩니다).
 
@@ -29,7 +51,12 @@ LLM_API_URL=http://host.docker.internal:8080/v1/chat/completions
 LLM_MODEL=your-model-name
 LLM_THINKING=off
 EMBEDDING_DEVICE=cpu          # GPU 서빙 시 cuda
+# EMBEDDING_PROFILE=gemma2    # 기본값. e5 로 바꾸면 이전 배포와 같은 동작(되돌리기)
+# PIPELINE=v3                 # 기본값(gemma2). decomposed = 기존 4회 분해. e5 프로필의 기본값은 decomposed
 ```
+
+v3 파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 씁니다. 확인한 서버 빌드는 b12004입니다.
+v3의 구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
 
 호스트에 llama.cpp(또는 OpenAI 호환 chat completions 엔드포인트)가 떠 있어야 합니다.
 포트·모델명이 다르면 `LLM_API_URL`·`LLM_MODEL`을 환경에 맞게 수정합니다.
@@ -47,7 +74,7 @@ docker compose logs -f          # "준비 완료" 뜨면 OK
 확인:
 
 ```bash
-curl http://localhost:3333/api/health      # {"status":"ok","variant":"b"}
+curl http://localhost:3333/api/health      # {"status":"ok","variant":"nt","embedding":"gemma2","pipeline":"v3"}
 ```
 
 브라우저: http://<서버>:3333
@@ -56,7 +83,7 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"b"}
 
 ## 점검 포인트 (배포 직후)
 
-- /api/health → variant b 확인
+- /api/health → variant nt / embedding gemma2 / pipeline v3 확인 (되돌린 경우 variant b / e5 / decomposed)
 - UI에서 한국어 묘사 → Danbooru태그 + 자연어 정상 출력
 - 캐릭터 이름 포함 입력(예: "원신 라이덴 쇼군") → 캐릭터 태그가 맨 앞에 오는지 확인
 - 태그 칩에 마우스 올리면 CSV 설명 툴팁(없으면 CSV 서빙/경로 확인)
