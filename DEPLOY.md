@@ -8,7 +8,7 @@
 danbooru-tags-rag/
 ├── data/                     # LanceDB 인덱스 — GPU 머신에서 빌드해 복사
 │   ├── embeddinggemma-2/
-│   │   └── lancedb_nt/       # ★ 본선 (기본 EMBEDDING_PROFILE=gemma2). 없으면 검색 전부 실패
+│   │   └── lancedb_sim/      # ★ 본선 (기본 EMBEDDING_PROFILE=gemma2). 없으면 검색 전부 실패
 │   ├── lancedb_b/            # 되돌리기용 (EMBEDDING_PROFILE=e5 일 때 본선)
 │   ├── lancedb_c/            # e5 선택 (직접조회 비교용)
 │   └── lancedb_a/            # 폐기 — 안 올려도 됨
@@ -26,13 +26,13 @@ danbooru-tags-rag/
 
 ```bash
 python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
-EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_nt (GPU 권장)
+EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_sim (GPU 권장)
 ```
 
 - 빌더는 처음 실행할 때 새 한국어 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다. 서빙 컨테이너는 이 CSV가 필요 없습니다(정의·별칭이 인덱스에 들어 있음).
 - 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.
 - 검증 기록(tag-embedding 벤치):
-  - 이 빌더가 만든 nt 인덱스는 벤치 인덱스와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
+  - 이 빌더가 만든 sim 인덱스는 벤치 인덱스(ns)와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
   - 로컬 `models/` 폴더에서 불러온 모델과 HF 캐시에서 불러온 모델의 벡터 차이도 0입니다.
 
 ### 되돌리기 (e5 + 기존 4회 분해 파이프라인)
@@ -52,13 +52,14 @@ LLM_MODEL=your-model-name
 LLM_THINKING=off
 EMBEDDING_DEVICE=cpu          # GPU 서빙 시 cuda
 # EMBEDDING_PROFILE=gemma2    # 기본값. e5 로 바꾸면 이전 배포와 같은 동작(되돌리기)
-# PIPELINE=v3                 # 기본값(gemma2). decomposed = 기존 4회 분해. e5 프로필의 기본값은 decomposed
+# PIPELINE=structured         # 기본값(gemma2). decomposed = 기존 4회 분해. e5 프로필의 기본값은 decomposed
+# LLM_CACHE_PROMPT=on         # structured 구조화 호출의 프롬프트 캐시 (off = 재현성 우선, 느림)
 ```
 
-v3 파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 씁니다. 확인한 서버 빌드는 b12004입니다.
-v3의 구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
-v3의 구조화 호출은 프롬프트 캐시를 켭니다(`V3_CACHE_PROMPT`, 기본 on). 이 서버는 MoE 일부를 CPU에 둬서 프롬프트 처리가 초당 약 150~200토큰으로 느리기 때문에, 캐시를 켜면 호출당 3~5초가 빨라집니다.
-캐시를 켜면 같은 입력의 결과가 실행마다 조금 다를 수 있습니다. 재현성이 필요하면 `V3_CACHE_PROMPT=off`로 바꾸면 되고, 대신 느려집니다.
+structured 파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 씁니다. 확인한 서버 빌드는 b12004입니다.
+structured의 구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
+structured의 구조화 호출은 프롬프트 캐시를 켭니다(`LLM_CACHE_PROMPT`, 기본 on). 이 서버는 MoE 일부를 CPU에 둬서 프롬프트 처리가 초당 약 150~200토큰으로 느리기 때문에, 캐시를 켜면 호출당 3~5초가 빨라집니다.
+캐시를 켜면 같은 입력의 결과가 실행마다 조금 다를 수 있습니다. 재현성이 필요하면 `LLM_CACHE_PROMPT=off`로 바꾸면 되고, 대신 느려집니다.
 캐시를 켠 호출이 드물게 스키마를 벗어나 출력 한도까지 반복되면, 자동으로 캐시를 끄고 한 번 재시도합니다(로그: `구조화 호출 실패 → 캐시 끄고 재시도`).
 
 호스트에 llama.cpp(또는 OpenAI 호환 chat completions 엔드포인트)가 떠 있어야 합니다.
@@ -77,7 +78,7 @@ docker compose logs -f          # "준비 완료" 뜨면 OK
 확인:
 
 ```bash
-curl http://localhost:3333/api/health      # {"status":"ok","variant":"nt","embedding":"gemma2","pipeline":"v3"}
+curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","embedding":"gemma2","pipeline":"structured"}
 ```
 
 브라우저: http://<서버>:3333
@@ -86,7 +87,7 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"nt","embe
 
 ## 점검 포인트 (배포 직후)
 
-- /api/health → variant nt / embedding gemma2 / pipeline v3 확인 (되돌린 경우 variant b / e5 / decomposed)
+- /api/health → variant sim / embedding gemma2 / pipeline structured 확인 (되돌린 경우 variant b / e5 / decomposed)
 - UI에서 한국어 묘사 → Danbooru태그 + 자연어 정상 출력
 - 캐릭터 이름 포함 입력(예: "원신 라이덴 쇼군") → 캐릭터 태그가 맨 앞에 오는지 확인
 - 태그 칩에 마우스 올리면 CSV 설명 툴팁(없으면 CSV 서빙/경로 확인)

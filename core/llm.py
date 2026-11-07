@@ -18,7 +18,7 @@ from .config import (
     LLM_API_URL,
     LLM_MODEL,
     LLM_THINKING_ENABLED,
-    V3_CACHE_PROMPT,
+    LLM_CACHE_PROMPT,
 )
 from .exceptions import LLMError
 
@@ -236,13 +236,13 @@ async def _call_json(
     temperature: float = 0.0, seed: int = 1234, timeout: float = 180.0,
 ) -> dict:
     """
-    JSON 스키마 강제 호출 (v3 파이프라인 전용, 기존 _call 과 별개).
+    JSON 스키마 강제 호출 (structured 파이프라인 전용, 기존 _call 과 별개).
 
     - response_format=json_schema: llama.cpp 가 스키마 문법으로 디코딩을 제한한다
       (코드펜스·뒷말 없이 스키마에 맞는 JSON 만 나옴. 서버 b12004 에서 확인).
     - thinking 은 항상 끈다: 선택 프롬프트(~2천 토큰)에서 사고가 6천 토큰을 넘겨
       슬롯 컨텍스트 8192 를 다 쓰고 본문이 비는 실패가 40% 나왔다(벤치 실측).
-    - temperature 0 + 고정 seed. 프롬프트 캐시는 config.V3_CACHE_PROMPT(기본 켬):
+    - temperature 0 + 고정 seed. 프롬프트 캐시는 config.LLM_CACHE_PROMPT(기본 켬):
       켜면 시스템 프롬프트를 다시 처리하지 않아 호출당 3~5초 빠르다(이 서버는 프롬프트 처리 ~150~200 tok/s).
       대신 같은 입력 두 번 실행이 분해 8/10·선택 9/10 만 동일(점수는 같음). 끄면 10/10 동일(벤치 실측).
     - 캐시를 켠 호출에서 드물게(벤치 69회 중 1회, 영어 입력) 스키마를 벗어난 혼잣말이 출력 한도까지 반복됐다.
@@ -250,9 +250,9 @@ async def _call_json(
     - 출력 한도 512: 분해·선택 출력은 100토큰 안팎이라 충분하고, 실패 시 낭비 시간을 줄인다(~38 tok/s).
     """
     try:
-        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, V3_CACHE_PROMPT)
+        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, LLM_CACHE_PROMPT)
     except LLMError as e:
-        if not V3_CACHE_PROMPT:
+        if not LLM_CACHE_PROMPT:
             raise
         logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
         return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)

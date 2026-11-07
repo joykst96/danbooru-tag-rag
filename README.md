@@ -22,7 +22,7 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 - **환각 차단**: 최종 태그는 (1) LLM 프롬프트로 "후보 외 금지" 강제 + (2) 후보풀 대조 + (3) DB 실존 태그 코드필터, 삼중으로 거릅니다. LLM이 무엇을 생성하든 DB에 없으면 코드가 버립니다.
 - **세부 보존**: 단순 번역이 아니라 한국어 의미단위로 분해해 각각 검색하고, 실존 후보 중에서 원본 의도에 맞는 것을 LLM이 선택합니다.
 
-### 동작 흐름 (기본 모드, v3 — 2026-11-05~)
+### 동작 흐름 (기본 모드, structured — 2026-11-05~)
 
 ```
 입력(한국어)
@@ -33,15 +33,19 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
  5. 자연어 프롬프트 생성 (톤: 묘사적/담백/단어형+)
 ```
 
-- **임베딩**: `google/embeddinggemma-2`(텍스트 인코더만, 768차원) + 인덱스 `nt`입니다. `nt`는 새 한국어 소스(`mengod-hf/danbooru-tags-kr`)의 정의·별칭을 모델 카드 형식(`title: 태그명 | text: 정의 별칭`)으로 임베딩합니다. CPU 쿼리는 e5-large보다 빠릅니다(56ms vs 103ms).
+- **임베딩**: `google/embeddinggemma-2`(텍스트 인코더만, 768차원) + 인덱스 `sim`입니다.
+  - `sim`은 새 한국어 소스(`mengod-hf/danbooru-tags-kr`)의 정의·별칭으로 `태그명 정의 별칭`을 만들고, 문서와 쿼리 모두 `SentenceSimilarity` 프롬프트(`task: sentence similarity | query: `)를 붙여 임베딩합니다.
+  - 같은 평가셋(168문항)에서 단일 질의 MRR이 0.739로, 운영 중이던 e5-large `b`(0.618)와 모델 카드의 title 형식(0.590)보다 높습니다.
+  - 서비스 방식(조각별 한국어+영어+어휘 일치)으로 쟀을 때 후보 회수율은 96%입니다.
+  - CPU 쿼리는 e5-large보다 빠릅니다(56ms vs 103ms).
 - **왜 바꿨나**: tag-embedding 벤치에서 같은 LLM(gemma4 26B A4B)과 같은 10문장으로 비교했습니다.
-  - 필수 개념 충족률이 기존 4회 분해 82%에서 v3 94~95%로 올랐습니다(같은 조건 Claude 95~98%).
+  - 필수 개념 충족률이 기존 4회 분해 82%에서 structured 94~95%로 올랐습니다(같은 조건 Claude 95~98%).
   - 인원수 시험(40문장)에서 한국어 95%를 맞혔습니다(동물·관계어·캐릭터 이름 포함).
 - **속도**(llama.cpp, CPU 임베딩): 요청 전체(자연어 포함)가 약 14~19초입니다. 기존 4회 분해 운영 실측은 16~27초였습니다.
-  - 프롬프트 캐시를 켰습니다(`V3_CACHE_PROMPT`, 기본 on).
+  - 프롬프트 캐시를 켰습니다(`LLM_CACHE_PROMPT`, 기본 on).
   - 출력 JSON을 압축했습니다(선택 225 → 34토큰, 분해 160 → 약 80토큰).
   - 질의 임베딩을 한 번에 묶었습니다.
-  - 캐시를 켜면 같은 입력을 두 번 돌렸을 때 결과가 조금 다를 수 있습니다(분해 8/10 동일, 채점 점수는 같음). `V3_CACHE_PROMPT=off`면 10/10 같지만 호출당 3~5초 느립니다.
+  - 캐시를 켜면 같은 입력을 두 번 돌렸을 때 결과가 조금 다를 수 있습니다(분해 8/10 동일, 채점 점수는 같음). `LLM_CACHE_PROMPT=off`면 10/10 같지만 호출당 3~5초 느립니다.
   - 캐시를 켠 호출에서 드물게 스키마를 벗어난 반복 출력이 나오면, 캐시를 끄고 한 번 재시도합니다.
   - 기존 방식의 실패 사례는 세 가지였습니다.
     - "단발머리 소년"처럼 인물에 붙은 속성이 인원수 조각으로 통째로 빠짐
@@ -99,7 +103,7 @@ A local Korean→Danbooru tag generator using cross-lingual retrieval over local
 
 ### 인덱스 variant
 
-- **nt** (본선, gemma2 프로필): 위 "임베딩" 참고. 경로는 `data/embeddinggemma-2/lancedb_nt`입니다.
+- **sim** (본선, gemma2 프로필): 위 "임베딩" 참고. 경로는 `data/embeddinggemma-2/lancedb_sim`입니다. (2026-11-05 커밋의 `nt`는 title 형식이었는데, 단일 질의·영어 질의에서 유의하게 나빠 교체했습니다.)
 
 e5 프로필(되돌리기용)의 인덱스. 실측 결과 **B를 본선으로 확정**했었습니다.
 
@@ -144,12 +148,12 @@ curl http://localhost:3333/api/health
 | `parser.py` | description 타입별 분기 파싱 + variant별 임베딩 텍스트 구성 |
 | `embeddings.py` | 임베딩 (gemma2: embeddinggemma-2 / e5: e5-large) |
 | `database.py` | LanceDB (카테고리 필터 검색 지원) |
-| `builder.py` | CSV → variant 인덱스 빌드 (nt 는 `kr2.py` 로 새 한국어 소스 적용) |
-| `kr2.py` | 새 한국어 소스(mengod-hf/danbooru-tags-kr) 로드·교체·nt 문서 텍스트 |
+| `builder.py` | CSV → variant 인덱스 빌드 (sim 은 `kr2.py` 로 새 한국어 소스 적용) |
+| `kr2.py` | 새 한국어 소스(mengod-hf/danbooru-tags-kr) 로드·교체·sim 문서 텍스트 |
 | `search.py` | 벡터검색 + 2분할(일반/캐릭터) + 환각필터용 태그집합 + 이름 오염차단 헬퍼 + v3용 사전필터·어휘일치 |
 | `llm.py` | LLM 호출 (분해 선별·캐릭터 선택·자연어·톤, v3용 JSON 스키마 호출 `_call_json`) |
-| `llm_v3.py` | v3 구조화 분해 / 조각별 선택 프롬프트 |
-| `pipeline_v3.py` | **본선 파이프라인** (gemma2 프로필 기본) |
+| `llm_structured.py` | 구조화 분해 / 조각별 선택 프롬프트 |
+| `pipeline_structured.py` | **본선 파이프라인** (`PIPELINE=structured`, gemma2 프로필 기본) |
 | `llm_decompose.py` | 한국어 분해 / 통번역 분해 / 태그 완성 프롬프트 |
 | `pipeline_decomposed.py` | 기존 4회 분해 파이프라인 (`PIPELINE=decomposed`, e5 프로필 기본) |
 | `pipeline_split.py` | 고급(분할) 모드 파이프라인 (인물칸/배경칸) |
@@ -176,7 +180,7 @@ Both are blocked structurally.
 - **Hallucination-free**: final tags pass a triple filter — LLM prompt constraint, candidate-pool check, and a DB-existence code filter. Whatever the LLM emits, anything absent from the DB is dropped by code.
 - **Detail preservation**: Korean is decomposed into semantic search units, each retrieved separately; the LLM selects from real candidates against the original intent.
 
-### Flow (basic mode, v3 — since 2026-11-05)
+### Flow (basic mode, structured — since 2026-11-05)
 
 1. Structured decomposition (JSON-schema constrained) → people / characters / units `{ko, en}` (one concept per unit)
 2. Per-unit candidates → exact tag-name match + Korean query top5 + English query top5 (category `where` prefilter)
@@ -184,7 +188,7 @@ Both are blocked structurally.
 4. Final = headcount tags + character tags + selected tags/phrases (+ DB-existence and cosplay double guard)
 5. Natural-language prompt (tones unchanged)
 
-Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `nt` (definitions/aliases from the `mengod-hf/danbooru-tags-kr` source, embedded in the model card's `title: <tag> | text: <definition aliases>` format). On a 10-sentence benchmark with the same LLM (gemma4 26B A4B), required-concept coverage went from 82% (previous 4-call pipeline) to 94-95%, headcount accuracy on a 40-sentence set is 95%, and a full request takes about 14-19 s on the same server (the previous pipeline measured 16-27 s) thanks to prompt caching (`V3_CACHE_PROMPT`, default on), compact JSON output and batched query embedding. Set `EMBEDDING_PROFILE=e5` to return to e5-large and the previous pipeline below (`PIPELINE=decomposed` switches only the pipeline).
+Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `sim` (`<tag> <definition> <aliases>` from the `mengod-hf/danbooru-tags-kr` source, with the `SentenceSimilarity` prompt on both documents and queries; single-query MRR 0.739 vs 0.618 for the previous e5-large `b`). On a 10-sentence benchmark with the same LLM (gemma4 26B A4B), required-concept coverage went from 82% (previous 4-call pipeline) to 94-95%, headcount accuracy on a 40-sentence set is 95%, and a full request takes about 14-19 s on the same server (the previous pipeline measured 16-27 s) thanks to prompt caching (`LLM_CACHE_PROMPT`, default on), compact JSON output and batched query embedding. Set `EMBEDDING_PROFILE=e5` to return to e5-large and the previous pipeline below (`PIPELINE=decomposed` switches only the pipeline).
 
 Previous 4-call pipeline (`PIPELINE=decomposed`, default for the e5 profile):
 
@@ -212,7 +216,7 @@ Key structures: a **two-way DB split** (general vs character/series) to stop cha
 
 ### Index variant
 
-With the default gemma2 profile the mainline index is **nt** (`data/embeddinggemma-2/lancedb_nt`). For the e5 profile (rollback), variant **b** (English tag name + Korean aliases) was confirmed as the mainline from measurements — real-world input is heavily code-switched, so including English tag names helps. Variant **c** kept as an option; **a** dropped.
+With the default gemma2 profile the mainline index is **sim** (`data/embeddinggemma-2/lancedb_sim`). For the e5 profile (rollback), variant **b** (English tag name + Korean aliases) was confirmed as the mainline from measurements — real-world input is heavily code-switched, so including English tag names helps. Variant **c** kept as an option; **a** dropped.
 
 ### Setup / Run
 

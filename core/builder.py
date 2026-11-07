@@ -96,13 +96,13 @@ def build_variant(variant: str, parsed_tags: list[ParsedTag]) -> None:
     logger.info(f"variant '{variant}' 빌드 시작")
 
     # 1. 임베딩 텍스트 생성
-    if variant == "nt":
-        # gemma2 프로필: 정의·별칭·계층을 새 한국어 소스 값으로 바꾼 사본을 title 형식으로 임베딩하고,
+    if variant == "sim":
+        # gemma2 프로필: 정의·별칭·계층을 새 한국어 소스 값으로 바꾼 사본을 임베딩하고,
         # 레코드(definition/aliases/major/minor)에도 새 소스 값을 저장한다 (core/kr2.py).
-        from .kr2 import load_kr2, swap_source, build_embed_text_nt
+        from .kr2 import load_kr2, swap_source, build_embed_text_sim
         kr2 = load_kr2()
         parsed_tags = [swap_source(p, kr2) for p in parsed_tags]
-        embed_texts = [build_embed_text_nt(p) for p in parsed_tags]
+        embed_texts = [build_embed_text_sim(p) for p in parsed_tags]
     else:
         embed_texts = [build_embed_text(p, variant) for p in parsed_tags]
 

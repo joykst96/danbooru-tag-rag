@@ -1,5 +1,5 @@
 """
-새 한국어 소스 (nt 인덱스용)
+새 한국어 소스 (sim 인덱스용)
 
 HF dataset mengod-hf/danbooru-tags-kr (2026-11-04, MIT) 의 통합 CSV
 danbooru-tags-kr-2026-11-04.csv (150,993행) 를 revision 고정으로 받는다.
@@ -21,7 +21,7 @@ import csv
 from dataclasses import replace
 from functools import lru_cache
 
-from .parser import ParsedTag, parse_row
+from .parser import ParsedTag, build_embed_text, parse_row
 
 KR2_REPO = "mengod-hf/danbooru-tags-kr"
 KR2_REVISION = "2f134f25e001868d4ed08ffbc1011b8eaead8528"
@@ -60,12 +60,11 @@ def swap_source(p: ParsedTag, kr2: dict[str, ParsedTag]) -> ParsedTag:
                    definition=n.definition, aliases=list(n.aliases))
 
 
-def build_embed_text_nt(p: ParsedTag) -> str:
+def build_embed_text_sim(p: ParsedTag) -> str:
     """
-    nt 문서 텍스트 (embeddinggemma-2 모델 카드의 title 형식).
-    p 는 swap_source 를 거친 태그. 정의·별칭이 둘 다 없으면 "title: none | text: {태그명}".
+    sim 문서 텍스트: "{태그명} {한국어 정의} {한국어 별칭}" (parser variant a 구조). 정의·별칭이 없으면 태그명만.
+    p 는 swap_source 를 거친 태그. 임베딩할 때 SentenceSimilarity 프롬프트가 앞에 붙는다(embeddings.py).
+    벤치 이름 ns. (이전 커밋의 nt = "title: {태그명} | text: ..." 형식은 단일 질의 MRR 0.590 으로 sim 0.739 보다
+    유의하게 나빠 교체했다. 태그명을 뺀 정의만 형식도 0.661 로 낮았다 — 벤치 README 참고.)
     """
-    body = " ".join(x for x in [p.definition, " ".join(p.aliases)] if x).strip()
-    if not body:
-        return f"title: none | text: {p.tag_readable}"
-    return f"title: {p.tag_readable} | text: {body}"
+    return build_embed_text(p, "a")

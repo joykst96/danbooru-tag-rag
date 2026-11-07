@@ -1,5 +1,6 @@
 """
-v3 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택). 2026-11-05 v4(속도판)로 갱신.
+structured 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택). 2026-11-05 속도판(벤치 v4)으로 갱신.
+(이전 커밋에서는 파일명이 llm_v3.py 였다.)
 
 tag-embedding 벤치 gen_test/gemma_v4.py 의 프롬프트·스키마와 글자 단위로 같다(그대로 옮김).
 판단 규칙은 v3 와 같고, 바뀐 것은 출력 형식(압축)과 인원수 규칙이다.
@@ -61,7 +62,7 @@ SCHEMA_DECOMPOSE = {'type': 'object',
  'required': ['girls', 'boys', 'others', 'characters', 'units'],
  'additionalProperties': False}
 
-# ── 2. 조각별 선택 (스키마는 호출 시 조각마다 만든다: pipeline_v3.select) ──
+# ── 2. 조각별 선택 (스키마는 호출 시 조각마다 만든다: pipeline_structured.select) ──
 SYSTEM_SELECT = """You choose Danbooru tags for each search unit of an anime image description.
 
 You get the original Korean sentence and, for each unit (u0, u1, ...), its Korean text, its English meaning, and numbered candidate tags from the database with their Korean definitions.

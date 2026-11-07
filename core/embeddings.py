@@ -22,6 +22,7 @@ from .config import (
     EMBED_BATCH_SIZE,
     EMBEDDING_PROFILE,
     GEMMA2_QUERY_PROMPT,
+    GEMMA2_PASSAGE_PROMPT,
     GEMMA2_CONFIG_KWARGS,
     GEMMA2_MAX_SEQ_LENGTH,
     GEMMA2_TOKEN_BUDGET,
@@ -94,7 +95,7 @@ class EmbeddingManager:
         문서(passage)들을 벡터로 변환 (인덱스 빌드용, passage 프리픽스 부착).
         대량 처리이므로 배치 + 진행바 옵션을 둔다.
 
-        gemma2: 텍스트는 빌더가 "title: ... | text: ..." 로 이미 완성해 넘기므로 프롬프트 없이 인코딩.
+        gemma2: GEMMA2_PASSAGE_PROMPT(SentenceSimilarity) 를 붙여 인코딩 (쿼리와 같은 프롬프트 — 대칭 방식).
         """
         if _GEMMA2:
             return cls._gemma2_passages(texts, show_progress)
@@ -137,7 +138,8 @@ class EmbeddingManager:
         if not texts:
             return []
         max_seq = min(model.max_seq_length or GEMMA2_MAX_SEQ_LENGTH, GEMMA2_MAX_SEQ_LENGTH)
-        enc = model.tokenizer(texts, add_special_tokens=True, truncation=False)
+        prompt = model.prompts.get(GEMMA2_PASSAGE_PROMPT, "")
+        enc = model.tokenizer([prompt + t for t in texts], add_special_tokens=True, truncation=False)
         lens = np.minimum([len(x) for x in enc["input_ids"]], max_seq)
         order = np.argsort(-lens, kind="stable")
         dim_fn = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
@@ -151,7 +153,7 @@ class EmbeddingManager:
         while i < len(order):
             n = max(1, min(EMBED_BATCH_SIZE, GEMMA2_TOKEN_BUDGET // int(lens[order[i]])))
             idx = order[i:i + n].tolist()
-            out[idx] = model.encode([texts[j] for j in idx], batch_size=len(idx),
+            out[idx] = model.encode([texts[j] for j in idx], batch_size=len(idx), prompt_name=GEMMA2_PASSAGE_PROMPT,
                                     normalize_embeddings=True, show_progress_bar=False)
             if bar:
                 bar.update(len(idx))

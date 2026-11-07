@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from .embeddings import EmbeddingManager
 from . import search as search_mod
 from .pipeline_decomposed import run_decomposed_pipeline, stream_decomposed_pipeline
-from .pipeline_v3 import stream_v3_pipeline
+from .pipeline_structured import stream_structured_pipeline
 from .pipeline_split import stream_split_pipeline, CharBlock
 from . import genlog
 from .config import (
@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 
 # 본선 variant 는 config.MAIN_VARIANT (임베딩 프로필에 따라 결정).
 #   e5    : B (실측 — 코드스위칭 분포서 영어태그명 포함 B가 최적)
-#   gemma2: nt (tag-embedding 벤치 실측, config.py 참고)
-# 기본 모드 파이프라인은 config.PIPELINE ("v3" | "decomposed").
+#   gemma2: sim (tag-embedding 벤치 실측, config.py 참고)
+# 기본 모드 파이프라인은 config.PIPELINE ("structured" | "decomposed").
 
 # ---------------------------------------------------------------------------
 # 생성 요청 직렬화 (동시 1개) + 실시간 대기열
@@ -151,8 +151,8 @@ async def lifespan(app: FastAPI):
     EmbeddingManager.get_model()
     try:
         search_mod.get_tagset(MAIN_VARIANT)
-        if PIPELINE == "v3":
-            search_mod.get_tag_rows(MAIN_VARIANT)   # v3 어휘 일치용 (첫 요청 지연 방지)
+        if PIPELINE == "structured":
+            search_mod.get_tag_rows(MAIN_VARIANT)   # structured 어휘 일치용 (첫 요청 지연 방지)
     except Exception as e:
         logger.warning(f"태그집합 프리로드 실패(첫 요청 시 재시도): {e}")
     logger.info("준비 완료")
@@ -242,10 +242,10 @@ async def generate(req: GenerateRequest, request: Request):
             async for w in _wait_for_turn(my):
                 yield w
 
-            # 내 차례 — 4스텝 스트리밍 (이벤트 모양은 v3/decomposed 공통)
+            # 내 차례 — 4스텝 스트리밍 (이벤트 모양은 structured/decomposed 공통)
             _cats = set(req.search_categories) if req.search_categories else None
-            if PIPELINE == "v3":
-                _events = stream_v3_pipeline(
+            if PIPELINE == "structured":
+                _events = stream_structured_pipeline(
                     req.prompt,
                     variant=MAIN_VARIANT,
                     generate_nl=True,

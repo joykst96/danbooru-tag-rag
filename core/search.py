@@ -348,7 +348,7 @@ def drop_character_derived(tags: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# v3 파이프라인 전용 검색 (기존 함수와 별개 — 기존 경로 동작 불변)
+# structured 파이프라인 전용 검색 (기존 함수와 별개 — 기존 경로 동작 불변)
 # ---------------------------------------------------------------------------
 # 1) 카테고리를 LanceDB where 사전 필터로 거른다.
 #    기존 TagDatabase.search 는 top_k*4 를 가져와 파이썬에서 거르는 사후 필터라, 상위권을 다른
@@ -419,7 +419,7 @@ def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
 
 def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:
     """
-    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (v3 속도판).
+    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (structured 속도판).
     search_prefiltered 와 결과 형식이 같다. categories[i] 는 texts[i] 의 카테고리 집합.
     """
     if not texts:

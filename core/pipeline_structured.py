@@ -1,5 +1,6 @@
 """
-v3 파이프라인 (기본 모드 본선, config.PIPELINE="v3")
+structured 파이프라인 (기본 모드 본선, config.PIPELINE="structured")
+(벤치 실험 이름: v3 → 속도판 v4. 이전 커밋에서는 파일명이 pipeline_v3.py 였다.)
 
 tag-embedding 벤치(gen_test/gemma_v3.py → 속도판 gemma_v4.py)에서 gemma4 26B A4B 로 최적화·측정한 흐름을 옮겼다.
 벤치 10문장 개념 충족률: 기존 4회 분해(v1) 82% → v3 95% → 속도판 94~95% (같은 조건 Claude 95~98%).
@@ -29,10 +30,10 @@ api.py·index.html 은 그대로 동작한다. final_tags 에는 태그 외에 �
 import logging
 
 from . import search as search_mod
-from .config import MAIN_VARIANT, V3_SEED
+from .config import MAIN_VARIANT, LLM_SEED
 from .exceptions import LLMError
 from .llm import _call_json
-from .llm_v3 import SYSTEM_DECOMPOSE, SCHEMA_DECOMPOSE, SYSTEM_SELECT
+from .llm_structured import SYSTEM_DECOMPOSE, SCHEMA_DECOMPOSE, SYSTEM_SELECT
 from .pipeline_decomposed import _generate_nl_or_phrase
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ def to_units(pairs: list) -> list[dict]:
 def all_candidates(units: list[dict], cats_list: list[set[int]], variant: str) -> list[list[dict]]:
     """
     조각별 후보: 어휘 일치 → 한국어 질의 → 영어 질의 순서로 합치고 중복 제거.
-    모든 조각의 [한국어, 영어] 질의를 한 번에 임베딩한다(v3 속도판, 조각마다 따로 하던 것을 묶음).
+    모든 조각의 [한국어, 영어] 질의를 한 번에 임베딩한다(속도판, 조각마다 따로 하던 것을 묶음).
     """
     if not units:
         return []
@@ -109,9 +110,9 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
 
     notes: list[str] = []
     try:
-        res = await _call_json(SYSTEM_SELECT, "\n".join(lines), schema, name, seed=V3_SEED)
+        res = await _call_json(SYSTEM_SELECT, "\n".join(lines), schema, name, seed=LLM_SEED)
     except LLMError as e:
-        logger.warning(f"v3 선택 실패 → 분해 영어로 대체: {e}")
+        logger.warning(f"선택 실패 → 분해 영어로 대체: {e}")
         notes.append(f"선택 실패: {e}")
         res = {}
 
@@ -134,22 +135,22 @@ def _phrase_text(p: str) -> str:
     return " ".join(p[len("phrase:"):].replace(",", " ").split())
 
 
-async def stream_v3_pipeline(
+async def stream_structured_pipeline(
     korean_prompt: str,
     variant: str = MAIN_VARIANT,
     generate_nl: bool = True,
     search_categories: set[int] | None = None,
     nl_tone: str | None = None,
 ):
-    """v3 를 단계별로 스트리밍. yield 형식은 stream_decomposed_pipeline 과 같다."""
+    """structured 를 단계별로 스트리밍. yield 형식은 stream_decomposed_pipeline 과 같다."""
     unit_cats = set(search_categories) if search_categories else set(search_mod.GENERAL_CATS)
 
     # ── 1. 구조화 분해 ──
-    dec = await _call_json(SYSTEM_DECOMPOSE, korean_prompt, SCHEMA_DECOMPOSE, "decompose", seed=V3_SEED)
+    dec = await _call_json(SYSTEM_DECOMPOSE, korean_prompt, SCHEMA_DECOMPOSE, "decompose", seed=LLM_SEED)
     chars = to_units(dec.get("characters"))
     units = to_units(dec.get("units"))
     count = count_tags(dec)
-    logger.info(f"v3 분해: 인원={count} 캐릭터={[c['ko'] for c in chars]} 조각={[u['ko'] + '/' + u['en'] for u in units]}")
+    logger.info(f"structured 분해: 인원={count} 캐릭터={[c['ko'] for c in chars]} 조각={[u['ko'] + '/' + u['en'] for u in units]}")
     yield {"stage": "korean", "status": "한국어 키워드 추출 완료",
            "data": {"ko_units": [c["ko"] for c in chars] + [u["ko"] for u in units], "person_units": count}}
     en_units = [c["en"] for c in chars] + [u["en"] for u in units]
@@ -163,7 +164,7 @@ async def stream_v3_pipeline(
     # ── 3. 선택 ──
     picks, notes = await select(korean_prompt, all_units, all_cands, variant)
     if notes:
-        logger.info(f"v3 선택 메모: {notes}")
+        logger.info(f"structured 선택 메모: {notes}")
 
     # ── 4. 최종 조립 + 이중 방어 ──
     tag_cat = {h["tag"]: h["category"] for cs in all_cands for h in cs}
@@ -194,10 +195,10 @@ async def stream_v3_pipeline(
     yield {"stage": "nl", "status": "완료", "data": {"nl_prompt": nl_prompt}}
 
 
-async def run_v3_pipeline(korean_prompt: str, variant: str = MAIN_VARIANT, generate_nl: bool = False,
+async def run_structured_pipeline(korean_prompt: str, variant: str = MAIN_VARIANT, generate_nl: bool = False,
                           search_categories: set[int] | None = None, nl_tone: str | None = None) -> dict:
     """스트림을 모아 dict 로 반환 (검증·벤치마크용)."""
     out: dict = {}
-    async for ev in stream_v3_pipeline(korean_prompt, variant, generate_nl, search_categories, nl_tone):
+    async for ev in stream_structured_pipeline(korean_prompt, variant, generate_nl, search_categories, nl_tone):
         out.update(ev["data"])
     return out
