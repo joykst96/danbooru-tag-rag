@@ -285,9 +285,13 @@ def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 이름 정규화 (2026-11-08 운영 로그 표본 e10)
+# 고급 모드 캐릭터·작품 칸 전용: 이름 정확 일치 (2026-11-08 운영 로그 표본 e10)
 # ---------------------------------------------------------------------------
-# 이름 비교용 정규화 (고급 모드에서 캐릭터 이름과 같은 속성 토큰·조각을 거를 때 쓴다)
+# 벡터 검색만으로는 짧은 이름이 비슷한 표기의 다른 태그에 밀린다:
+#   "라플라스" top8 에 laplace_(nikke) 가 없음(별칭 "라플라스"는 있음), "아리" → ari_(shichigatsu) 등,
+#   ahri_(league) 는 별칭이 "구미호"뿐이라 영어 이름 "ahri" 의 태그 본체(괄호 앞)로만 찾을 수 있다.
+# 그래서 이름(한국어·영어)을 정규화해 ① 별칭 ② 태그 본체(괄호 한정어를 뗀 이름)와 정확히 같은 태그를 후보에 더한다.
+_name_index_cache: dict[tuple[str, int], dict[str, list[tuple[int, str]]]] = {}
 _QUAL_RE = re.compile(r"(_\([^)]*\))+$")
 
 
@@ -299,6 +303,42 @@ def norm_name(s: str) -> str:
 def tag_base(tag: str) -> str:
     """태그 본체: 끝의 괄호 한정어를 뗀 이름. laplace_(nikke) → laplace, saber_alter_(ver._shinjuku_1999) → saber_alter."""
     return _QUAL_RE.sub("", tag)
+
+
+def _name_index(variant: str, category: int) -> dict[str, list[tuple[int, str]]]:
+    """{정규화 이름: [(빈도, 태그)]} — 별칭과 태그 본체·태그 전체 이름으로 만든다(1회 로드 후 캐시)."""
+    key = (variant, category)
+    if key not in _name_index_cache:
+        d = get_db(variant).table.to_lance().to_table(columns=["tag", "category", "frequency", "aliases"]).to_pydict()
+        idx: dict[str, list[tuple[int, str]]] = {}
+        for t, c, f, al in zip(d["tag"], d["category"], d["frequency"], d["aliases"]):
+            if int(c) != category:
+                continue
+            names = {norm_name(t), norm_name(tag_base(t))} | {norm_name(a) for a in (al or [])}
+            for n in names:
+                if n:
+                    idx.setdefault(n, []).append((int(f or 0), t))
+        _name_index_cache[key] = idx
+        logger.info(f"이름 색인 로드 (variant={variant}, cat={category}): {len(idx)}개")
+    return _name_index_cache[key]
+
+
+def exact_name_lookup(names: list[str], variant: str, category: int, limit: int = 8) -> list[dict]:
+    """이름들과 별칭·태그 본체가 정확히 같은 태그(빈도순, 최대 limit). 결과 형식은 search_prefiltered_multi 와 같고 score=None."""
+    idx = _name_index(variant, category)
+    rows = get_tag_rows(variant)
+    keys = {norm_name(nm) for nm in names} - {""}
+    found: dict[str, tuple[int, int]] = {}
+    for k in keys:
+        for f, t in idx.get(k, []):
+            # 정렬: 태그 이름 자체가 같은 것(sakura_miko) → 빈도순(의상 변형 sakura_miko_(casual) 등은 뒤로)
+            found[t] = (0 if norm_name(t) in keys else 1, -f)
+    out = []
+    for t in sorted(found, key=lambda x: found[x])[:limit]:
+        r = rows.get(t)
+        if r:
+            out.append({**r, "score": None})
+    return out
 
 
 def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:

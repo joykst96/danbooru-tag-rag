@@ -341,8 +341,10 @@ async def select_character_and_series(
         lines = []
         for c in cands:
             al = ", ".join(c.get("aliases", [])[:6])
+            # score=None: 벡터 검색이 아니라 이름(별칭·태그 본체) 정확 일치로 찾은 후보 (search.exact_name_lookup)
+            sc = "exact name match" if c.get("score") is None else f'score={c["score"]:.3f}'
             lines.append(
-                f'- {c["tag"]} (score={c.get("score", 0):.3f}'
+                f'- {c["tag"]} ({sc}'
                 + (f', aliases=[{al}]' if al else "")
                 + ")"
             )

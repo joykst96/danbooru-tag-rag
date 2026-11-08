@@ -32,6 +32,7 @@ NL만 인물 단위로 묶어 generate_nl_multi 로 생성한다.
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from . import search as search_mod
@@ -69,6 +70,20 @@ class CharResult:
     attr_tags: list[str] = field(default_factory=list)     # cat0 속성(환각필터 후)
     name_unmatched: bool = False                            # 캐릭터명 DB 미스 → NL에만 이름
     gender: str | None = None                               # "girls"/"boys"/"others", 묘사로 못 정하면 None
+    name_en: str = ""                                       # 이름의 영어 표기(분해 characters, 한글 없으면 입력 그대로)
+    series_en: str = ""                                     # 작품의 영어 표기
+
+    def nl_name(self) -> str:
+        """NL 에 쓸 이름. 매칭에 실패한 한글 이름은 영어 표기로 바꾼다(e10 n=8: "주연 from 젠레스 존 제로")."""
+        if self.name_unmatched and _HANGUL.search(self.name) and self.name_en:
+            return self.name_en
+        return self.name
+
+    def nl_series(self) -> str:
+        """NL 에 쓸 작품명. 작품 태그를 못 찾은 한글 작품명은 영어 표기로 바꾼다."""
+        if not self.series_tags and _HANGUL.search(self.series) and self.series_en:
+            return self.series_en
+        return self.series
 
     def output_tags(self) -> list[str]:
         """Danbooru 태그 출력용. 작품(series) 태그 제외 — 작품은 NL/캐릭터추론 보조용."""
@@ -122,6 +137,62 @@ async def _describe_attr(
     return _drop_character_derived(res["tags"]), res["people"], res.get("characters", [])
 
 
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def _english_names(name: str, series: str, dchars: list[dict]) -> tuple[str, str]:
+    """
+    칸의 이름·작품 → 영어 표기 (분해 characters 의 [한국어, 영어] 쌍에서 찾는다. 이미 한글이 없으면 그대로).
+    고급 모드 이름칸은 사용자가 적은 표기(대개 한국어)로만 검색해서, 별칭에 한국어 이름이 없는 캐릭터를 놓쳤다
+    (e10 n=8 주연 → zhu_yuan, n=11 아리 → ahri_(league)). 분해는 이름의 영어 표기를 함께 낸다.
+    """
+    def find(s: str, other: str) -> str:
+        if not s.strip():
+            return ""
+        if not _HANGUL.search(s):
+            return s.strip()
+        k, ko_other = search_mod.norm_name(s), search_mod.norm_name(other)
+        for c in dchars:
+            ck = search_mod.norm_name(c["ko"])
+            if ck and (ck == k or (ck in k or k in ck) and ck != ko_other) and not _HANGUL.search(c["en"]):
+                return c["en"]
+        return ""
+    return find(name, series), find(series, name)
+
+
+def _char_candidates(name: str, series: str, name_en: str, variant: str, top_k: int) -> list[dict]:
+    """
+    캐릭터 후보 = 이름 정확 일치(별칭·태그 본체, 한국어·영어) + 벡터 검색(이름 / "이름 (작품)" / 영어 이름).
+    벡터 검색은 cat4 where 사전 필터(search_prefiltered_multi). 예전 search_character_only 는 사후 필터라
+    상위권을 다른 카테고리가 채우면 후보가 줄었다(작품칸 "니케"·"젠레스 존 제로"는 cat3 후보 0건).
+    "이름 (작품)" 질의: "주연" top8 에 zhu_yuan 이 없지만 "주연 (젠레스 존 제로)"는 top1.
+    """
+    queries = [name] + ([f"{name} ({series})"] if series else [])
+    if name_en and search_mod.norm_name(name_en) != search_mod.norm_name(name):
+        queries.append(name_en)
+    hits = search_mod.search_prefiltered_multi(queries, [set(search_mod.CHAR_ONLY_CATS)] * len(queries), variant, top_k=top_k)
+    exact = search_mod.exact_name_lookup([name, name_en], variant, 4, limit=top_k)
+    return _merge(exact, *hits)
+
+
+def _series_candidates(series: str, series_en: str, variant: str, top_k: int) -> list[dict]:
+    """작품 후보 = 이름 정확 일치 + cat3 사전 필터 벡터 검색(작품명, 영어 작품명)."""
+    queries = [series] + ([series_en] if series_en and search_mod.norm_name(series_en) != search_mod.norm_name(series) else [])
+    hits = search_mod.search_prefiltered_multi(queries, [set(search_mod.COPYRIGHT_CATS)] * len(queries), variant, top_k=top_k)
+    exact = search_mod.exact_name_lookup([series, series_en], variant, 3, limit=top_k)
+    return _merge(exact, *hits)
+
+
+def _merge(*lists: list[dict]) -> list[dict]:
+    seen, out = set(), []
+    for lst in lists:
+        for h in lst:
+            if h["tag"] not in seen:
+                seen.add(h["tag"])
+                out.append(h)
+    return out
+
+
 def _name_keys(*names: str) -> set[str]:
     """이름·태그 → 중복 비교 키(정규화 이름과, 태그면 괄호 한정어를 뗀 본체)."""
     out = set()
@@ -160,30 +231,26 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
         res.gender = _gender(people)
         return res
 
+    # 캐릭터묘사 → structured 분해·검색·선택. (캐릭터 선택보다 먼저 한다: 분해의 영어 이름을 후보 검색에 쓴다)
+    # 자기 칸 이름/작품 오염 차단: 묘사칸에 자기 캐릭터 이름을 또 적으면(예: 묘사에
+    # "A캐릭터가 ~한다") 그 이름이 cat0 일반검색을 타서 'A_(cosplay)' 같은 파생 태그가
+    # 잡혀 최종에 [정식 캐릭터태그, A_(cosplay)] 가 중복으로 들어간다. 캐릭터 정체성은
+    # 아래의 cat4 검색이 담당하므로, 묘사칸은 속성/동작만 찾으면 된다.
+    # → 자기 name/series 를 조각에서 제거 + _(cosplay) 등 파생 태그 후처리 제거.
+    # 오리지널 캐릭터는 이름 입력을 무시하므로 성별 추론에도 쓰지 않는다.
+    res.attr_tags, people, dchars = await _describe_attr(
+        res.desc, variant, strip_names=[res.name, res.series],
+        name_hint="" if res.is_original else res.name,
+        series_hint="" if res.is_original else res.series,
+    )
+
     # 오리지널 캐릭터: 작품/캐릭터 DB 검색 안 함(이름/작품 입력도 무시). 묘사만 검색.
     if not res.is_original and (res.name or res.series):
         # 작품·캐릭터 후보군을 각각 cat3/cat4에서 받아서, LLM이 사용자 입력 기준으로 선택.
         # (벡터 top1 단순채택은 동명이인/동일작품 조연을 구분 못 함 → LLM 의미판단으로 교정.)
-        def _cands(hits) -> list[dict]:
-            out = []
-            for r in (getattr(hits, "results", None) or []):
-                out.append({
-                    "tag": r.tag,
-                    "score": r.score,
-                    "aliases": getattr(r, "aliases", []) or [],
-                })
-            return out
-
-        char_cands: list[dict] = []
-        series_cands: list[dict] = []
-        if res.name:
-            c_hits = search_mod.search_character_only([res.name], variant, top_k=top_k)
-            if c_hits:
-                char_cands = _cands(c_hits[0])
-        if res.series:
-            s_hits = search_mod.search_copyright([res.series], variant, top_k=top_k)
-            if s_hits:
-                series_cands = _cands(s_hits[0])
+        res.name_en, res.series_en = _english_names(res.name, res.series, dchars)
+        char_cands = _char_candidates(res.name, res.series, res.name_en, variant, top_k) if res.name else []
+        series_cands = _series_candidates(res.series, res.series_en, variant, top_k) if res.series else []
 
         char_tag, series_tag = await llm.select_character_and_series(
             res.name, res.series, char_cands, series_cands,
@@ -195,20 +262,7 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
                 res.char_tags = [char_tag]
             else:
                 res.name_unmatched = True
-                logger.info(f"캐릭터명 미스(이름만 NL): {res.name}")
-
-    # 캐릭터묘사 → structured 분해·검색·선택.
-    # 자기 칸 이름/작품 오염 차단: 묘사칸에 자기 캐릭터 이름을 또 적으면(예: 묘사에
-    # "A캐릭터가 ~한다") 그 이름이 cat0 일반검색을 타서 'A_(cosplay)' 같은 파생 태그가
-    # 잡혀 최종에 [정식 캐릭터태그, A_(cosplay)] 가 중복으로 들어간다. 캐릭터 정체성은
-    # 위의 cat4(search_character_only) 검색이 담당하므로, 묘사칸은 속성/동작만 찾으면 된다.
-    # → 자기 name/series 를 조각에서 제거 + _(cosplay) 등 파생 태그 후처리 제거.
-    # 오리지널 캐릭터는 이름 입력을 무시하므로 성별 추론에도 쓰지 않는다.
-    res.attr_tags, people, _ = await _describe_attr(
-        res.desc, variant, strip_names=[res.name, res.series],
-        name_hint="" if res.is_original else res.name,
-        series_hint="" if res.is_original else res.series,
-    )
+                logger.info(f"캐릭터명 미스(이름만 NL): {res.name} (영어 {res.name_en!r})")
     # 캐릭터 태그·이름·작품과 같은 속성 토큰 제거 (e10 리허설 n=5: sakura_miko 옆에 'sakura miko' 구가 붙음)
     res.attr_tags = _drop_name_tokens(
         res.attr_tags, _name_keys(*res.char_tags, *res.series_tags, res.name, res.series))
@@ -293,7 +347,7 @@ async def stream_split_pipeline(
         nl_prompt = await generate_nl_or_phrase(intent, basis, [], nl_tone, variant, temperature=nl_temperature)
     elif generate_nl:
         char_payload = [
-            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
+            {"name": c.nl_name(), "series": c.nl_series(), "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
             for c in char_results
         ]
         nl_prompt = await llm.generate_nl_multi(
