@@ -2,7 +2,7 @@
 데이터베이스 모듈
 
 LanceDB 벡터 데이터베이스 연결과 검색을 담당한다.
-임베딩 텍스트 구성이 다른 3개 variant(a/b/c)를 각각 별도 DB로 관리한다.
+인덱스(variant)는 sim 하나다(data/embeddinggemma-2/lancedb_sim, config.get_lancedb_path).
 
 정규화된 벡터를 쓰므로 L2 거리를 코사인 유사도로 변환한다:
     cosine_similarity = 1 - L2_distance / 2   (정규화 벡터 전제)
@@ -35,7 +35,7 @@ class DanbooruTag(BaseModel):
     minor: str = ""           # 한국어 소분류
     definition: str = ""      # 한국어 정의
     aliases: list[str] = []   # 한국어 별칭
-    vector: list[float]       # 임베딩 벡터 (1024차원)
+    vector: list[float]       # 임베딩 벡터 (embeddinggemma-2, 768차원)
 
 
 class SearchResult(BaseModel):
@@ -60,7 +60,7 @@ class TagDatabase:
     """
     하나의 variant 인덱스에 대한 LanceDB 관리.
 
-    variant('a'|'b'|'c')별로 인스턴스를 따로 만들어 사용한다.
+    variant 이름으로 경로·테이블명을 정한다(현재 sim 하나).
     """
 
     def __init__(self, variant: str):
@@ -105,7 +105,7 @@ class TagDatabase:
         벡터 유사도 검색.
 
         Args:
-            query_vector: 질의 벡터 (1024차원)
+            query_vector: 질의 벡터 (768차원, 정규화)
             top_k: 반환 개수
             exclude_categories: 결과에서 제외할 category 집합 (선택)
             include_categories: 이 category 집합만 남김 (화이트리스트, 선택).

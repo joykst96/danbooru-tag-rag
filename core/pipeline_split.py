@@ -30,13 +30,11 @@ NL만 인물 단위로 묶어 generate_nl_multi 로 생성한다.
 """
 
 import logging
-import re
 from dataclasses import dataclass, field
 
 from . import search as search_mod
 from . import llm
 from .pipeline_decomposed import run_decomposed_pipeline
-from .config import DEFAULT_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -203,55 +201,6 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
         res.desc, variant, top_k,
         strip_names=[res.name, res.series], drop_derived=True,
     )
-    return res
-
-
-async def run_split_pipeline(
-    characters: list[CharBlock],
-    background_desc: str = "",
-    variant: str = "b",
-    top_k: int = 5,
-    generate_nl: bool = True,
-    nl_tone: str | None = None,
-) -> SplitResult:
-    """분할입력(고급) 파이프라인 실행."""
-    res = SplitResult(background_desc=background_desc.strip())
-
-    for block in characters:
-        if not (block.name.strip() or block.series.strip() or block.desc.strip()):
-            continue  # 빈 칸 skip
-        res.characters.append(await _process_character(block, variant, top_k))
-
-    # 배경칸 (cat0). 인물 이름은 검색에서 제거(공통칸 동작지시가 cosplay 등 오염 유발 방지)
-    _names = [b.name for b in characters if b.name.strip()]
-    res.background_tags, _ = await _describe_attr(
-        background_desc, variant, top_k, strip_names=_names, drop_derived=True
-    )
-
-    # 전체 평탄 합본
-    flat: list[str] = []
-    for c in res.characters:
-        for t in c.output_tags():
-            if t not in flat:
-                flat.append(t)
-    for t in res.background_tags:
-        if t not in flat:
-            flat.append(t)
-    res.final_tags = flat
-
-    # 인물 단위 NL
-    if generate_nl:
-        char_payload = [
-            {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
-            for c in res.characters
-        ]
-        res.nl_prompt = await llm.generate_nl_multi(
-            char_payload,
-            background_tags=res.background_tags,
-            background_desc=res.background_desc,
-            tone=nl_tone,
-        )
-
     return res
 
 

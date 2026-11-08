@@ -7,7 +7,7 @@ services:
     volumes:
       # 빌드 산출물·모델·CSV·설정은 호스트에서 마운트 (이미지에 안 구움)
       - ./data:/app/data:ro            # LanceDB 인덱스 (5070에서 빌드해 복사)
-      - ./models:/app/models:ro        # embeddinggemma-2 (되돌리기용 e5-large 도 여기)
+      - ./models:/app/models:ro        # embeddinggemma-2 (download_model.py)
       - ./danbooru-tags.csv:/app/danbooru-tags.csv:ro
       - ./.env:/app/.env:ro
       - ./logs:/app/logs               # 생성 로그(쓰기 가능, :ro 아님). 호스트에 보존

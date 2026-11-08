@@ -8,12 +8,13 @@ danbooru-tags.csv 의 description 컬럼은 일관성이 없다. 스캔 결과 4
     - jp_plain ( 1.8%): 일본어 평문 설명
 
 이 모듈은 각 행을 타입별로 분기 파싱하여 구조화된 ParsedTag 로 변환하고,
-A/B 비교용 임베딩 텍스트를 생성한다.
+임베딩 텍스트("{태그명} {정의} {별칭}")를 만든다.
+(인덱스는 정의·별칭을 새 한국어 소스로 바꾼 뒤 이 텍스트로 임베딩한다 — core/kr2.py)
 
 핵심 결정(스캔 데이터 기반):
     - 별칭 파싱은 ko_full 71,142행에서 100% 성공 → 정규식 신뢰 가능
     - 한국어 정보가 없는 행(empty/en/jp, 약 38%)은 영어 태그명에 의존
-      → 2-pass 검색의 '영어 pass'가 이 영역을 책임진다
+      → 검색은 조각마다 한국어·영어 질의를 함께 보내 이 영역을 메운다(pipeline_structured)
 """
 
 import re
@@ -123,50 +124,21 @@ def parse_row(tag: str, category: int, frequency: int, description: str) -> Pars
 
 
 # ---------------------------------------------------------------------------
-# A/B/C 임베딩 텍스트 생성
+# 임베딩 텍스트 생성
 # ---------------------------------------------------------------------------
-# variant A: 영어 태그명 + 한국어 정의 + 별칭  (전부 다 넣기)
-# variant B: 영어 태그명 + 한국어 별칭          (정의 제외)
-# variant C: 한국어 정의 + 별칭                  (영어 태그명 제외, 순수 한국어)
-#
-# 한국어 정보가 없는 행(empty/en/jp)에서는:
-#   A, B → 영어 태그명이 항상 포함되므로 자연스럽게 영어로 검색됨
-#   C   → 정의/별칭이 없으면 영어 태그명으로 폴백 (빈 문자열 방지)
+# "{영어 태그명(읽기형)} {한국어 정의} {한국어 별칭}". 정의·별칭이 없으면 태그명만.
+# (e5 시절 비교한 a/b/c 구성 중 a 구조. embeddinggemma-2 벤치에서도 이 구성이 가장 좋았다.)
 # ---------------------------------------------------------------------------
 
-def build_embed_text(parsed: ParsedTag, variant: str) -> str:
-    """variant('a'|'b'|'c')에 맞는 임베딩 대상 문자열을 만든다."""
+def build_embed_text(parsed: ParsedTag) -> str:
+    """임베딩 대상 문자열: 태그명 + 정의 + 별칭."""
+    parts = [parsed.tag_readable]
+    if parsed.definition:
+        parts.append(parsed.definition)
     alias_str = " ".join(parsed.aliases)
-    tag_str = parsed.tag_readable
-
-    if variant == "a":
-        # 영어 태그명 + 정의 + 별칭 (전부)
-        parts = [tag_str]
-        if parsed.definition:
-            parts.append(parsed.definition)
-        if alias_str:
-            parts.append(alias_str)
-        return " ".join(parts).strip()
-
-    elif variant == "b":
-        # 영어 태그명 + 별칭 (정의 제외)
-        parts = [tag_str]
-        if alias_str:
-            parts.append(alias_str)
-        return " ".join(parts).strip()
-
-    elif variant == "c":
-        # 한국어 정의 + 별칭 (영어 태그명 제외). 둘 다 없으면 영어 태그명 폴백.
-        parts = []
-        if parsed.definition:
-            parts.append(parsed.definition)
-        if alias_str:
-            parts.append(alias_str)
-        if not parts:
-            parts.append(tag_str)
-        return " ".join(parts).strip()
-
-    raise ValueError(f"알 수 없는 variant: {variant}")
+    if alias_str:
+        parts.append(alias_str)
+    return " ".join(parts).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +159,4 @@ if __name__ == "__main__":
         print(f"  계층: {p.major} > {p.minor}")
         print(f"  정의: {p.definition}")
         print(f"  별칭: {p.aliases}")
-        print(f"  embed_A: {build_embed_text(p, 'a')}")
-        print(f"  embed_B: {build_embed_text(p, 'b')}")
-        print(f"  embed_C: {build_embed_text(p, 'c')}")
+        print(f"  embed: {build_embed_text(p)}")

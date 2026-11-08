@@ -62,9 +62,9 @@ def swap_source(p: ParsedTag, kr2: dict[str, ParsedTag]) -> ParsedTag:
 
 def build_embed_text_sim(p: ParsedTag) -> str:
     """
-    sim 문서 텍스트: "{태그명} {한국어 정의} {한국어 별칭}" (parser variant a 구조). 정의·별칭이 없으면 태그명만.
+    sim 문서 텍스트: "{태그명} {한국어 정의} {한국어 별칭}" (parser.build_embed_text). 정의·별칭이 없으면 태그명만.
     p 는 swap_source 를 거친 태그. 임베딩할 때 SentenceSimilarity 프롬프트가 앞에 붙는다(embeddings.py).
     벤치 이름 ns. (이전 커밋의 nt = "title: {태그명} | text: ..." 형식은 단일 질의 MRR 0.590 으로 sim 0.739 보다
     유의하게 나빠 교체했다. 태그명을 뺀 정의만 형식도 0.661 로 낮았다 — 벤치 README 참고.)
     """
-    return build_embed_text(p, "a")
+    return build_embed_text(p)

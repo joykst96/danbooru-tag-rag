@@ -1,24 +1,18 @@
 """
 빌더 모듈
 
-danbooru-tags.csv 를 읽어 3개 variant(a/b/c) 인덱스를 빌드한다.
+danbooru-tags.csv 를 읽어 sim 인덱스(data/embeddinggemma-2/lancedb_sim)를 빌드한다.
 
 흐름:
-    1. CSV 로드 → parser 로 ParsedTag 리스트 생성 (한 번만)
-    2. 작가(1)/메타(5) 카테고리 제외, MIN_FREQUENCY 미만 제외
-    3. 각 variant 별로:
-        - build_embed_text 로 임베딩 텍스트 생성
-        - embed_passages 로 벡터화 (GPU)
-        - DanbooruTag 레코드로 묶어 LanceDB 저장
-
-CSV 파싱은 공유하고 임베딩만 variant별로 3번 → GPU면 전체 15분 내외.
+    1. CSV 로드 → parser 로 ParsedTag 리스트 생성 (EXCLUDED_CATEGORIES·MIN_FREQUENCY 필터)
+    2. 정의·별칭·대소분류를 새 한국어 소스 값으로 교체 (core/kr2.py)
+    3. "{태그명} {정의} {별칭}" 텍스트를 embeddinggemma-2 로 임베딩 (토큰 예산 배치, GPU 권장)
+    4. DanbooruTag 레코드로 묶어 LanceDB 저장
 
 사용법:
-    python -m core.builder            # 전체 variant 빌드
-    python -m core.builder a          # 특정 variant만
+    python -m core.builder
 """
 
-import sys
 import csv
 import logging
 
@@ -26,9 +20,10 @@ from .config import (
     TAGS_CSV_PATH,
     MIN_FREQUENCY,
     EXCLUDED_CATEGORIES,
-    INDEX_VARIANTS,
+    MAIN_VARIANT,
 )
-from .parser import parse_row, build_embed_text, ParsedTag
+from .parser import parse_row, ParsedTag
+from .kr2 import load_kr2, swap_source, build_embed_text_sim
 from .embeddings import EmbeddingManager
 from .database import TagDatabase, DanbooruTag
 
@@ -91,20 +86,14 @@ def load_and_parse() -> list[ParsedTag]:
 
 
 def build_variant(variant: str, parsed_tags: list[ParsedTag]) -> None:
-    """단일 variant 인덱스를 빌드한다."""
+    """sim 인덱스를 빌드한다. 레코드(definition/aliases/major/minor)에도 새 소스 값을 저장한다."""
     logger.info("=" * 60)
     logger.info(f"variant '{variant}' 빌드 시작")
 
-    # 1. 임베딩 텍스트 생성
-    if variant == "sim":
-        # gemma2 프로필: 정의·별칭·계층을 새 한국어 소스 값으로 바꾼 사본을 임베딩하고,
-        # 레코드(definition/aliases/major/minor)에도 새 소스 값을 저장한다 (core/kr2.py).
-        from .kr2 import load_kr2, swap_source, build_embed_text_sim
-        kr2 = load_kr2()
-        parsed_tags = [swap_source(p, kr2) for p in parsed_tags]
-        embed_texts = [build_embed_text_sim(p) for p in parsed_tags]
-    else:
-        embed_texts = [build_embed_text(p, variant) for p in parsed_tags]
+    # 1. 임베딩 텍스트 생성 (새 한국어 소스로 교체한 사본)
+    kr2 = load_kr2()
+    parsed_tags = [swap_source(p, kr2) for p in parsed_tags]
+    embed_texts = [build_embed_text_sim(p) for p in parsed_tags]
 
     # 2. 벡터화 (GPU 배치)
     logger.info(f"임베딩 생성 중... ({len(embed_texts)}건)")
@@ -131,8 +120,8 @@ def build_variant(variant: str, parsed_tags: list[ParsedTag]) -> None:
     logger.info(f"variant '{variant}' 빌드 완료: {len(records)}건")
 
 
-def build_all(variants: tuple[str, ...] = INDEX_VARIANTS) -> None:
-    """지정한 variant들을 모두 빌드한다. CSV 파싱은 한 번만 공유."""
+def build_all() -> None:
+    """sim 인덱스를 빌드한다."""
     if not logging.root.handlers:
         logging.basicConfig(
             level=logging.INFO,
@@ -143,23 +132,11 @@ def build_all(variants: tuple[str, ...] = INDEX_VARIANTS) -> None:
     if not parsed_tags:
         raise RuntimeError("파싱된 태그가 없습니다. CSV 경로를 확인하세요.")
 
-    # 모델 미리 로드 (variant 루프마다 재로드 방지)
     EmbeddingManager.get_model()
-
-    for variant in variants:
-        build_variant(variant, parsed_tags)
-
+    build_variant(MAIN_VARIANT, parsed_tags)
     logger.info("=" * 60)
-    logger.info(f"전체 빌드 완료: {list(variants)}")
+    logger.info(f"전체 빌드 완료: {MAIN_VARIANT}")
 
 
 if __name__ == "__main__":
-    # 인자로 특정 variant 지정 가능 (예: python -m core.builder a)
-    if len(sys.argv) > 1:
-        target = tuple(v for v in sys.argv[1:] if v in INDEX_VARIANTS)
-        if not target:
-            print(f"유효한 variant 없음. 선택지: {INDEX_VARIANTS}")
-            sys.exit(1)
-        build_all(target)
-    else:
-        build_all()
+    build_all()

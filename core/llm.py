@@ -28,36 +28,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 시스템 프롬프트
 # ---------------------------------------------------------------------------
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_KEYWORDS = """You are an expert anime illustration tag extractor.
-Convert the Korean prompt into a JSON array of specific English keywords.
-Break down visual elements: character count, hair/eye traits, clothing, actions, objects, background.
-Prefer concrete Danbooru-style phrasing (e.g. '1girl', 'blue hair', 'school uniform').
-Return ONLY a valid JSON array of strings. No markdown, no extra text.
-Example: ["1girl", "blue hair", "school uniform", "rain", "street"]"""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_REFINE = """You are a Danbooru tag matching assistant.
-Given a Korean intent and a list of candidate Danbooru tags retrieved from a database,
-select and refine the English tag expressions that best match the user's actual intent.
-The candidates are real tags from the database; prefer them, but you may adjust wording
-to better English tag form if needed.
-Return ONLY a valid JSON array of English strings. No markdown, no extra text."""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_SELECT = """You are a strict Danbooru tag selector.
-Given a Korean intent and structured candidate tags (with categories),
-choose the final set of tags that faithfully represent the intent.
-
-CRITICAL: You may ONLY output tags that appear VERBATIM in the candidate list.
-Never invent, complete, normalize, or modify a tag. If the intent is "은발"
-(silver hair) and the candidate list contains "grey_hair" but not "silver_hair",
-you MUST output "grey_hair" — outputting "silver_hair" is forbidden because it is
-not in the candidates. Copy tags exactly as given, character for character.
-
-Exclude tags pulled in only by vector similarity but not actually described.
-Return ONLY a valid JSON array of the chosen English tag strings. No markdown."""
-
 SYSTEM_NL = """You are a prompt writer for the ANIMA image generation model.
 Given a Korean intent and English keywords, write a natural-language English prompt that conveys the keywords.
 Rules:
@@ -71,11 +41,6 @@ Rules:
 4. Standard capitalization for character/series names; convert tag underscores to spaces in the prose.
 {TONE_RULES}
 Return ONLY the raw prompt text. No markdown, no explanations."""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_VERIFY = """You are a strict tag reviewer for Danbooru tags.
-Identify tags from the 'Matched Tags' list that are unrelated to the 'Korean Intent'.
-Return ONLY a JSON array of suspicious tag strings. Empty array [] if all are fine. No markdown."""
 
 # ── 분할입력(고급) 전용: 캐릭터/작품 태그 선택 ──
 # 사용자가 입력한 캐릭터명·작품명과, DB 검색으로 얻은 후보군을 함께 주고
@@ -352,49 +317,6 @@ def _strip_meta_leak(text: str) -> str:
 # ---------------------------------------------------------------------------
 # 단계별 함수
 # ---------------------------------------------------------------------------
-async def extract_keywords(korean_prompt: str, temperature: float = 0.1) -> list[str]:
-    """[Pass 1 전처리] 한국어 → 영어 키워드 배열."""
-    content = await _call(SYSTEM_KEYWORDS, korean_prompt, temperature)
-    kws = _extract_json_array(content)
-    if not kws:
-        raise LLMError(f"키워드 추출 실패. 응답: {content[:200]}")
-    return kws
-
-
-async def refine_with_candidates(
-    korean_prompt: str,
-    candidate_tags: list[str],
-    temperature: float = 0.1,
-) -> list[str]:
-    """
-    [2-pass 핵심] 후보 태그를 보여주고 영어 의도표현으로 정제.
-    '번역→태그'가 아니라 '태그 보고 의도 매핑' (mode collapse 회피).
-    """
-    user = (
-        f"Korean intent: {korean_prompt}\n"
-        f"Candidate tags from DB: {', '.join(candidate_tags)}"
-    )
-    content = await _call(SYSTEM_REFINE, user, temperature)
-    return _extract_json_array(content)
-
-
-async def select_final(
-    korean_prompt: str,
-    grouped_candidates: dict[str, list[str]],
-    temperature: float = 0.1,
-) -> list[str]:
-    """
-    [최종 선택] 카테고리 구조화된 후보 중 의도에 맞는 것 선택.
-    grouped_candidates 예: {"general": [...], "character": [...], "copyright": [...]}
-    """
-    lines = [f"Korean intent: {korean_prompt}", "Candidates by category:"]
-    for label, tags in grouped_candidates.items():
-        if tags:
-            lines.append(f"  [{label}] {', '.join(tags)}")
-    content = await _call(SYSTEM_SELECT, "\n".join(lines), temperature)
-    return _extract_json_array(content)
-
-
 async def generate_nl_prompt(
     korean_prompt: str,
     keywords: list[str],
@@ -416,22 +338,6 @@ async def generate_nl_prompt(
         return _strip_markdown(content)
     except LLMError:
         return ""  # 자연어는 보조 수단이라 실패해도 전체를 막지 않음
-
-
-async def verify_tags(
-    korean_prompt: str,
-    tags: list[str],
-    temperature: float = 0.1,
-) -> list[str]:
-    """[검증] 의도와 무관한 의심 태그 식별 (제거가 아니라 표시용)."""
-    if not tags:
-        return []
-    user = f"Korean intent: {korean_prompt}\nMatched tags: {', '.join(tags)}"
-    try:
-        content = await _call(SYSTEM_VERIFY, user, temperature)
-        return _extract_json_array(content)
-    except LLMError:
-        return []  # 검증 실패는 무시 (보조 기능)
 
 
 async def select_character_and_series(

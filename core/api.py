@@ -2,13 +2,13 @@
 API 모듈 (배포용)
 
 - 정적 파일 서빙: index.html(루트 UI), danbooru-tags.csv(태그 호버 설명)
-- /api/generate     : 4회 분해 파이프라인을 구버전 호환 SSE 형식으로 응답
-- /api/direct_search: 단일 쿼리 벡터검색 (카테고리 지정 가능)
-- /api/logs         : 인메모리 로그 조회 (디버깅)
+- /api/generate      : 기본 모드. structured 파이프라인(core/pipeline_structured.py)을 NDJSON 스트림으로 응답
+- /api/generate_split: 고급(분할) 모드. 인물칸 N + 배경칸 1 (core/pipeline_split.py)
+- /api/direct_search : 단일 쿼리 벡터검색 (카테고리 지정 가능)
+- /api/logs          : 인메모리 로그 조회 (디버깅)
 
-내부 로직은 4회 분해 파이프라인(pipeline_decomposed)을 본선으로 사용.
-응답 필드명만 구버전 UI(index.html)가 기대하는 형태로 매핑:
-    final_prompt(쉼표문자열) / english_prompt / suspicious_tags / keywords / candidates
+응답 필드명은 UI(index.html)가 기대하는 형태로 매핑한다:
+    ko_units / person_units / keywords / final_prompt(쉼표문자열) / suspicious_tags / english_prompt
 """
 
 import json
@@ -23,13 +23,12 @@ from pydantic import BaseModel, Field
 
 from .embeddings import EmbeddingManager
 from . import search as search_mod
-from .pipeline_decomposed import run_decomposed_pipeline, stream_decomposed_pipeline
 from .pipeline_structured import stream_structured_pipeline
 from .pipeline_split import stream_split_pipeline, CharBlock
 from . import genlog
 from .config import (
     PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K, CATEGORY_LABELS,
-    MAIN_VARIANT, EMBEDDING_PROFILE, PIPELINE,
+    MAIN_VARIANT, GEMMA2_LOCAL_NAME,
 )
 
 logging.basicConfig(
@@ -38,10 +37,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 본선 variant 는 config.MAIN_VARIANT (임베딩 프로필에 따라 결정).
-#   e5    : B (실측 — 코드스위칭 분포서 영어태그명 포함 B가 최적)
-#   gemma2: sim (tag-embedding 벤치 실측, config.py 참고)
-# 기본 모드 파이프라인은 config.PIPELINE ("structured" | "decomposed").
+# 인덱스는 config.MAIN_VARIANT(sim) 하나 (tag-embedding 벤치 실측, config.py 참고).
 
 # ---------------------------------------------------------------------------
 # 생성 요청 직렬화 (동시 1개) + 실시간 대기열
@@ -147,12 +143,11 @@ logging.getLogger("core").setLevel(logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"임베딩 모델 프리로드 중... (embedding={EMBEDDING_PROFILE}, variant={MAIN_VARIANT}, pipeline={PIPELINE})")
+    logger.info(f"임베딩 모델 프리로드 중... (embedding={GEMMA2_LOCAL_NAME}, variant={MAIN_VARIANT})")
     EmbeddingManager.get_model()
     try:
         search_mod.get_tagset(MAIN_VARIANT)
-        if PIPELINE == "structured":
-            search_mod.get_tag_rows(MAIN_VARIANT)   # structured 어휘 일치용 (첫 요청 지연 방지)
+        search_mod.get_tag_rows(MAIN_VARIANT)   # structured 어휘 일치용 (첫 요청 지연 방지)
     except Exception as e:
         logger.warning(f"태그집합 프리로드 실패(첫 요청 시 재시도): {e}")
     logger.info("준비 완료")
@@ -212,7 +207,7 @@ class GenerateSplitRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# /api/generate — 4회 분해 → 구버전 호환 SSE
+# /api/generate — structured 파이프라인 → NDJSON 스트림
 # ---------------------------------------------------------------------------
 @app.post("/api/generate")
 async def generate(req: GenerateRequest, request: Request):
@@ -242,26 +237,15 @@ async def generate(req: GenerateRequest, request: Request):
             async for w in _wait_for_turn(my):
                 yield w
 
-            # 내 차례 — 4스텝 스트리밍 (이벤트 모양은 structured/decomposed 공통)
+            # 내 차례 — 단계별 스트리밍 (korean → english → final → nl)
             _cats = set(req.search_categories) if req.search_categories else None
-            if PIPELINE == "structured":
-                _events = stream_structured_pipeline(
-                    req.prompt,
-                    variant=MAIN_VARIANT,
-                    generate_nl=True,
-                    search_categories=_cats,
-                    nl_tone=req.nl_tone,
-                )
-            else:
-                _events = stream_decomposed_pipeline(
-                    req.prompt,
-                    general_variant=MAIN_VARIANT,
-                    en_variant=MAIN_VARIANT,
-                    top_k=5,
-                    generate_nl=True,
-                    search_categories=_cats,
-                    nl_tone=req.nl_tone,
-                )
+            _events = stream_structured_pipeline(
+                req.prompt,
+                variant=MAIN_VARIANT,
+                generate_nl=True,
+                search_categories=_cats,
+                nl_tone=req.nl_tone,
+            )
             async for ev in _events:
                 stage = ev["stage"]
                 d = ev["data"]
@@ -477,7 +461,7 @@ async def get_logs(after: int = 0):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "variant": MAIN_VARIANT, "embedding": EMBEDDING_PROFILE, "pipeline": PIPELINE}
+    return {"status": "ok", "variant": MAIN_VARIANT, "embedding": GEMMA2_LOCAL_NAME}
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 설정 모듈
 
 프로젝트 전역 상수를 정의한다.
-경로, 모델, 필터 정책, 임베딩 a/b/c 인덱스 설정을 한곳에 모은다.
+경로, 임베딩 모델(embeddinggemma-2), 필터 정책, 인덱스, LLM 설정을 한곳에 모은다.
 """
 
 import os
@@ -37,21 +37,7 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", PROJECT_ROOT / "logs"))
 # ---------------------------------------------------------------------------
 # 임베딩 모델 설정
 # ---------------------------------------------------------------------------
-# HuggingFace 모델 ID (다운로드 시 사용 / 로컬에 없을 때 폴백)
-EMBEDDING_MODEL_HF_ID = "intfloat/multilingual-e5-large"
-
-# 로컬에 받아둔 모델 폴더명
-EMBEDDING_MODEL_LOCAL_NAME = "multilingual-e5-large"
-
-# ── 임베딩 프로필 (2026-11-05) ──
-# "gemma2": google/embeddinggemma-2 + 새 한국어 소스(sim 인덱스). 기본값.
-# "e5"    : 기존 multilingual-e5-large + a/b/c 인덱스. 되돌리기용 안전망(코드 경로 그대로 보존).
-#           e5 는 시험이 끝나면 삭제할 예정이다. 그때 이 프로필 스위치와 e5 분기도 함께 지운다.
-# 근거·실측: tag-embedding 벤치 README (임베딩 모델 비교, 접두사 실험 na/nt/ns/nsd, 서비스 시나리오 평가).
-EMBEDDING_PROFILE = os.environ.get("EMBEDDING_PROFILE", "gemma2").strip().lower()
-if EMBEDDING_PROFILE not in ("gemma2", "e5"):
-    raise ValueError(f"EMBEDDING_PROFILE 은 gemma2 또는 e5 여야 합니다: {EMBEDDING_PROFILE!r}")
-
+# google/embeddinggemma-2 (2026-11-05 multilingual-e5-large 에서 교체, 근거·실측: tag-embedding 벤치 README).
 # embeddinggemma-2 설정 (모델 카드 + 벤치 실측으로 확인)
 #   - 텍스트 인코더만 로드(vision/audio 제외 → 270M). float16 금지(NaN), fp32 로 고정.
 #   - 쿼리·문서 모두 내장 프롬프트 SentenceSimilarity ("task: sentence similarity | query: ") — 카드의 대칭 태스크 방식.
@@ -73,25 +59,13 @@ GEMMA2_DIM = 768
 # 실제 로드 경로: 로컬 폴더가 있으면 그걸, 없으면 HF ID로 폴백
 def get_embedding_model_path() -> str:
     """로컬 모델 폴더가 존재하면 그 경로를, 없으면 HF ID 문자열을 반환."""
-    if EMBEDDING_PROFILE == "gemma2":
-        local_path = MODELS_DIR / GEMMA2_LOCAL_NAME
-        return str(local_path) if local_path.exists() else GEMMA2_HF_ID
-    local_path = MODELS_DIR / EMBEDDING_MODEL_LOCAL_NAME
-    if local_path.exists():
-        return str(local_path)
-    return EMBEDDING_MODEL_HF_ID
+    local_path = MODELS_DIR / GEMMA2_LOCAL_NAME
+    return str(local_path) if local_path.exists() else GEMMA2_HF_ID
 
-
-EMBEDDING_DIM = GEMMA2_DIM if EMBEDDING_PROFILE == "gemma2" else 1024
-MAX_SEQ_LENGTH = 512
 
 # 디바이스: 'cuda' / 'cpu' / None(자동). 환경변수 EMBEDDING_DEVICE로 제어.
 # 테스트 환경(eGPU RTX 4060)에서는 'cuda' 권장 — CPU 대비 임베딩 빌드가 수십 배 빠름.
 EMBEDDING_DEVICE = os.environ.get("EMBEDDING_DEVICE", None)
-
-# E5 모델 비대칭 프리픽스
-E5_QUERY_PREFIX = "query: "
-E5_PASSAGE_PREFIX = "passage: "
 
 # 임베딩 배치 크기
 EMBED_BATCH_SIZE = 256
@@ -124,36 +98,17 @@ MIN_FREQUENCY = 50
 # ---------------------------------------------------------------------------
 # LanceDB 설정
 # ---------------------------------------------------------------------------
-# 임베딩 텍스트 구성이 다른 3개 인덱스를 만들어 비교한다.
-#   variant A: 영어 태그명 + 한국어 정의 + 별칭  (전부 다 넣기)
-#   variant B: 영어 태그명 + 한국어 별칭          (정의 제외)
-#   variant C: 한국어 정의 + 별칭                  (영어 태그명 제외, 순수 한국어 공간)
-# 비교 축:
-#   A vs B → 정의문의 기여도
-#   A vs C → 영어 태그명의 기여도
-#   B vs C → 영어태그 vs 한국어정의 신호 강도
-# 각 variant 는 별도 LanceDB 디렉토리 + 테이블로 저장되어 독립 비교 가능.
-INDEX_VARIANTS = ("a", "b", "c")
-DEFAULT_VARIANT = "a"
-# 본선 variant (API·파이프라인이 쓰는 인덱스). e5 는 기존 확정값 B.
-MAIN_VARIANT = "b"
-
-# gemma2 프로필: 인덱스는 sim 하나.
+# 인덱스는 sim 하나.
 #   sim = 새 한국어 소스(mengod-hf/danbooru-tags-kr, core/kr2.py)의 정의·별칭으로 바꾼 태그를
 #         "{태그명} {정의} {별칭}" 으로, 쿼리·문서 모두 SentenceSimilarity 프롬프트를 붙여 임베딩.
 #         (벤치 이름 ns. 이전 커밋의 nt(title 형식)는 단일 질의·영어 질의에서 유의하게 나빠 교체했다.)
-#   태그 집합은 danbooru-tags.csv 그대로(114,092). 경로를 모델별 폴더로 분리해 e5 인덱스와 섞이지 않게 한다.
-if EMBEDDING_PROFILE == "gemma2":
-    INDEX_VARIANTS = ("sim",)
-    DEFAULT_VARIANT = "sim"
-    MAIN_VARIANT = "sim"
+#   태그 집합은 danbooru-tags.csv 그대로(114,092). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
+MAIN_VARIANT = "sim"
 
 
 def get_lancedb_path(variant: str) -> Path:
-    """variant('a'|'b')에 해당하는 LanceDB 디렉토리 경로."""
-    if EMBEDDING_PROFILE == "gemma2":
-        return DATA_DIR / GEMMA2_LOCAL_NAME / f"lancedb_{variant}"
-    return DATA_DIR / f"lancedb_{variant}"
+    """variant 에 해당하는 LanceDB 디렉토리 경로."""
+    return DATA_DIR / GEMMA2_LOCAL_NAME / f"lancedb_{variant}"
 
 
 def get_table_name(variant: str) -> str:
@@ -165,7 +120,6 @@ def get_table_name(variant: str) -> str:
 # 검색 기본값
 # ---------------------------------------------------------------------------
 DEFAULT_TOP_K = 10
-MAX_TOP_K = 100
 # 유사도 임계값 (distance_to_similarity 변환 후 0~1 스케일)
 DEFAULT_THRESHOLD = 0.80
 
@@ -183,22 +137,11 @@ LLM_THINKING_ENABLED = os.environ.get("LLM_THINKING", "off").lower() not in (
 )
 
 # ---------------------------------------------------------------------------
-# 기본 모드 파이프라인 선택 (2026-11-05)
+# 구조화 호출(structured 파이프라인의 분해·선택) 설정
 # ---------------------------------------------------------------------------
-# "structured": 구조화 분해 → 조각별(한국어+영어+어휘일치) 후보 → 번호 선택 (core/pipeline_structured.py). 기본값.
-#               (벤치 실험 이름 v3 → 속도판 v4. 이전 커밋에서는 PIPELINE=v3 이었다.)
-# "decomposed": 기존 4회 분해 파이프라인 (core/pipeline_decomposed.py). 되돌리기용.
-# 고급(분할) 모드는 두 경우 모두 기존 pipeline_split 을 그대로 쓴다.
-# 기본값은 임베딩 프로필을 따른다: gemma2 → structured, e5 → decomposed.
-#   EMBEDDING_PROFILE=e5 하나만 바꾸면 이전 배포와 같은 동작으로 완전히 돌아간다.
-#   (structured 는 gemma2 인덱스에서만 측정했다. e5 와 조합하려면 PIPELINE=structured 로 명시해야 켜진다.)
-PIPELINE = os.environ.get("PIPELINE", "structured" if EMBEDDING_PROFILE == "gemma2" else "decomposed").strip().lower()
-if PIPELINE not in ("structured", "decomposed"):
-    raise ValueError(f"PIPELINE 은 structured 또는 decomposed 여야 합니다: {PIPELINE!r}")
-
-# structured 의 구조화 호출(분해·선택) 설정. 벤치 실측(gemma4 26B A4B IQ4_XS):
 #   temperature 0 + 고정 seed. thinking 은 선택 프롬프트에서 슬롯 컨텍스트(8192)를 다 써 40% 실패 → 항상 off.
 #   프롬프트 캐시(LLM_CACHE_PROMPT, 기본 on): 켜면 호출당 3~5초 빠르고(시스템 프롬프트 재처리 없음),
 #   두 번 실행 결과가 분해 8/10·선택 9/10 동일(채점 점수는 같음). off 면 10/10 동일하지만 느리다.
+#   (실측: gemma4 26B A4B IQ4_XS, 벤치 2026-11-05)
 LLM_SEED = int(os.environ.get("LLM_SEED", "1234"))
 LLM_CACHE_PROMPT = os.environ.get("LLM_CACHE_PROMPT", "on").lower() not in ("off", "false", "0", "no", "")
