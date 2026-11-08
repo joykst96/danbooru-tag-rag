@@ -83,9 +83,9 @@ and a local LLM (llama.cpp). Tags that are not in the database never reach the o
 
 1. 의존성 설치: `uv sync` 또는 `pip install -e .`
 2. `.env` 작성 (LLM 엔드포인트, `EMBEDDING_DEVICE`) — `.env.example` 참고
-3. `danbooru-tags.csv`를 루트에 배치 (`name,category,post_count,description`)
+3. 태그 CSV 생성: `python -m core.tags_source` → 루트 `danbooru-tags.csv` (HF `mengod-hf/danbooru-tags-kr` 2026-11-04, post_count ≥ 50, 116,325개)
 4. 임베딩 모델 다운로드(최초 1회): `python download_model.py` → `models/embeddinggemma-2`
-5. 인덱스 빌드: `python -m core.builder` → `data/embeddinggemma-2/lancedb_sim` (GPU 권장, CPU는 매우 느림). 처음 실행할 때 새 한국어 소스 CSV를 HF에서 받습니다.
+5. 인덱스 빌드: `python -m core.builder` → `data/embeddinggemma-2/lancedb_sim` (GPU 권장, CPU는 매우 느림).
 
 > Python 3.11 이상, sentence-transformers 6.1 이상, transformers 5.22 이상이 필요합니다(embeddinggemma-2).
 >
@@ -116,7 +116,7 @@ curl http://localhost:3333/api/health
 |------|------|
 | `core/config.py` | 전역 설정 (`.env` 로드) |
 | `core/parser.py` | description 타입별 분기 파싱 + 임베딩 텍스트(`태그명 정의 별칭`) |
-| `core/kr2.py` | 새 한국어 소스(mengod-hf/danbooru-tags-kr) 로드·교체 |
+| `core/tags_source.py` | 태그 소스(HF mengod-hf/danbooru-tags-kr, 고정 revision) → `danbooru-tags.csv` 생성 |
 | `core/embeddings.py` | embeddinggemma-2 임베딩 (토큰 예산 배치) |
 | `core/database.py` | LanceDB (카테고리 필터 검색) |
 | `core/builder.py` | CSV → `sim` 인덱스 빌드 |
@@ -173,8 +173,9 @@ Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `si
 
 ```bash
 uv sync                      # or pip install -e .
-# .env (see .env.example), danbooru-tags.csv at root
+# .env (see .env.example)
 python download_model.py     # once → models/embeddinggemma-2
+python -m core.tags_source   # → danbooru-tags.csv (mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50)
 python -m core.builder       # GPU recommended → data/embeddinggemma-2/lancedb_sim
 python -m core.api           # port 3333
 ```

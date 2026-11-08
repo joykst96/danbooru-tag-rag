@@ -9,7 +9,7 @@ danbooru-tags.csv 의 description 컬럼은 일관성이 없다. 스캔 결과 4
 
 이 모듈은 각 행을 타입별로 분기 파싱하여 구조화된 ParsedTag 로 변환하고,
 임베딩 텍스트("{태그명} {정의} {별칭}")를 만든다.
-(인덱스는 정의·별칭을 새 한국어 소스로 바꾼 뒤 이 텍스트로 임베딩한다 — core/kr2.py)
+(danbooru-tags.csv 는 core/tags_source.py 가 HF mengod-hf/danbooru-tags-kr 로 만든다)
 
 핵심 결정(스캔 데이터 기반):
     - 별칭 파싱은 ko_full 71,142행에서 100% 성공 → 정규식 신뢰 가능

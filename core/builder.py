@@ -5,11 +5,13 @@ danbooru-tags.csv 를 읽어 sim 인덱스(data/embeddinggemma-2/lancedb_sim)를
 
 흐름:
     1. CSV 로드 → parser 로 ParsedTag 리스트 생성 (EXCLUDED_CATEGORIES·MIN_FREQUENCY 필터)
-    2. 정의·별칭·대소분류를 새 한국어 소스 값으로 교체 (core/kr2.py)
-    3. "{태그명} {정의} {별칭}" 텍스트를 embeddinggemma-2 로 임베딩 (토큰 예산 배치, GPU 권장)
-    4. DanbooruTag 레코드로 묶어 LanceDB 저장
+       CSV 는 python -m core.tags_source 로 만든다(HF mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50).
+    2. "{태그명} {정의} {별칭}" 텍스트를 embeddinggemma-2 로 임베딩 (토큰 예산 배치, GPU 권장)
+       쿼리·문서 모두 SentenceSimilarity 프롬프트(embeddings.py). 벤치 이름 ns.
+    3. DanbooruTag 레코드로 묶어 LanceDB 저장
 
 사용법:
+    python -m core.tags_source   # danbooru-tags.csv 생성(처음 한 번, 소스를 바꿀 때)
     python -m core.builder
 """
 
@@ -22,8 +24,7 @@ from .config import (
     EXCLUDED_CATEGORIES,
     MAIN_VARIANT,
 )
-from .parser import parse_row, ParsedTag
-from .kr2 import load_kr2, swap_source, build_embed_text_sim
+from .parser import parse_row, build_embed_text, ParsedTag
 from .embeddings import EmbeddingManager
 from .database import TagDatabase, DanbooruTag
 
@@ -86,14 +87,12 @@ def load_and_parse() -> list[ParsedTag]:
 
 
 def build_variant(variant: str, parsed_tags: list[ParsedTag]) -> None:
-    """sim 인덱스를 빌드한다. 레코드(definition/aliases/major/minor)에도 새 소스 값을 저장한다."""
+    """sim 인덱스를 빌드한다."""
     logger.info("=" * 60)
     logger.info(f"variant '{variant}' 빌드 시작")
 
-    # 1. 임베딩 텍스트 생성 (새 한국어 소스로 교체한 사본)
-    kr2 = load_kr2()
-    parsed_tags = [swap_source(p, kr2) for p in parsed_tags]
-    embed_texts = [build_embed_text_sim(p) for p in parsed_tags]
+    # 1. 임베딩 텍스트 생성
+    embed_texts = [build_embed_text(p) for p in parsed_tags]
 
     # 2. 벡터화 (GPU 배치)
     logger.info(f"임베딩 생성 중... ({len(embed_texts)}건)")

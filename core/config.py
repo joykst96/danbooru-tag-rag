@@ -41,7 +41,7 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", PROJECT_ROOT / "logs"))
 # embeddinggemma-2 설정 (모델 카드 + 벤치 실측으로 확인)
 #   - 텍스트 인코더만 로드(vision/audio 제외 → 270M). float16 금지(NaN), fp32 로 고정.
 #   - 쿼리·문서 모두 내장 프롬프트 SentenceSimilarity ("task: sentence similarity | query: ") — 카드의 대칭 태스크 방식.
-#     문서 텍스트는 "{태그명} {한국어 정의} {한국어 별칭}" (core/kr2.build_embed_text_sim).
+#     문서 텍스트는 "{태그명} {한국어 정의} {한국어 별칭}" (core/parser.build_embed_text).
 #     벤치 비교(2026-11-08): 단일 질의 MRR sim 0.739 / title 형식 0.590 / 검색용 비대칭 0.719 / 정의만 0.661,
 #     서비스 시나리오(조각별 한국어+영어+어휘일치) 후보 회수율 sim 96% / 91% / 94% / 94%.
 #   - max_seq 8192 를 명시해야 함(토크나이저 기본값은 1e30 센티널).
@@ -96,10 +96,10 @@ MIN_FREQUENCY = 50
 # LanceDB 설정
 # ---------------------------------------------------------------------------
 # 인덱스는 sim 하나.
-#   sim = 새 한국어 소스(mengod-hf/danbooru-tags-kr, core/kr2.py)의 정의·별칭으로 바꾼 태그를
+#   sim = danbooru-tags.csv(mengod-hf/danbooru-tags-kr 2026-11-04 에서 core/tags_source.py 로 생성)의 태그를
 #         "{태그명} {정의} {별칭}" 으로, 쿼리·문서 모두 SentenceSimilarity 프롬프트를 붙여 임베딩.
 #         (벤치 이름 ns. 이전 커밋의 nt(title 형식)는 단일 질의·영어 질의에서 유의하게 나빠 교체했다.)
-#   태그 집합은 danbooru-tags.csv 그대로(114,092). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
+#   태그 116,325개(post_count >= 50). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
 MAIN_VARIANT = "sim"
 
 

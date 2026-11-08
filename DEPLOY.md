@@ -11,7 +11,7 @@ danbooru-tags-rag/
 │       └── lancedb_sim/      # ★ 본선 인덱스. 없으면 검색 전부 실패
 ├── models/
 │   └── embeddinggemma-2/     # ★ 임베딩 모델 (download_model.py 산출물, 약 1.5GB)
-├── danbooru-tags.csv         # 태그 호버 설명용 (UI가 /danbooru-tags.csv 로 fetch)
+├── danbooru-tags.csv         # python -m core.tags_source 산출물. UI 태그 설명·자동완성이 /danbooru-tags.csv 로 fetch
 ├── .env                      # 아래 참고
 ├── logs/                     # 생성 로그 저장 위치 (쓰기 가능, 자동 생성되나 미리 mkdir 권장)
 ├── index.html  web/          # UI (이미지에 COPY됨 — 수정 시 --build 필요)
@@ -22,10 +22,18 @@ danbooru-tags-rag/
 
 ```bash
 python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
+python -m core.tags_source                        # danbooru-tags.csv (HF mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50, 116,325개)
 EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_sim (GPU 권장)
 ```
 
-- 빌더는 처음 실행할 때 새 한국어 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다. 서빙 컨테이너는 이 CSV가 필요 없습니다(정의·별칭이 인덱스에 들어 있음).
+- **2026-11-08 태그 데이터 교체**: 태그 집합을 출처 기록이 없던 옛 `danbooru-tags.csv`(114,092개)에서 위 소스(116,325개)로 바꿨습니다.
+  새 캐릭터 약 4만 개가 들어오고, Danbooru 에서 이름이 바뀐 태그는 새 이름으로 나갑니다(`china_dress` → `qipao`).
+  이미지 시험(anima-base-v1.0 / SilvermoonMix 2B, 이름 바뀐 20쌍)에서 새 이름 인식 18/20, 옛 이름 16~17/20 이었습니다.
+  겹치는 107,414개는 임베딩 텍스트·벡터가 이전 인덱스와 같습니다(카테고리만 152개 바뀜).
+  **배포할 때 `danbooru-tags.csv`와 `data/embeddinggemma-2/lancedb_sim`을 함께 바꿔야 합니다.** CSV 는 UI 태그 설명·자동완성이 쓰고,
+  인덱스와 같은 소스여야 설명이 맞습니다.
+
+- `core.tags_source`는 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다.
 - 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.
 - 임베딩 벡터는 디바이스와 무관하게 같으므로, CUDA로 빌드한 인덱스를 CPU 서빙에 그대로 씁니다.
 - 검증 기록(tag-embedding 벤치): 이 빌더가 만든 sim 인덱스는 벤치 인덱스(ns)와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
