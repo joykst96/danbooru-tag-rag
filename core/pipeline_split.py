@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 
 from . import search as search_mod
 from . import llm
-from .pipeline_structured import describe, count_tags, generate_nl_or_phrase
+from .pipeline_structured import describe, count_tags, generate_nl_or_phrase, needs_no_humans
 from .config import MAIN_VARIANT
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,9 @@ async def stream_split_pipeline(
         if c.gender:
             people[c.gender] += 1
     flat: list[str] = list(count_tags(people))
+    # 인물칸이 없는 배경만의 입력: 기본 모드와 같은 규칙으로 no_humans (pipeline_structured.needs_no_humans)
+    if not char_results and "no_humans" not in background_tags and needs_no_humans(background_desc, background_tags, variant):
+        flat.append("no_humans")
     for c in char_results:
         for t in c.output_tags():
             if t not in flat:
@@ -343,7 +346,7 @@ async def stream_split_pipeline(
     nl_prompt = ""
     if generate_nl and (not char_results or nl_tone == "phrase"):
         intent = " / ".join([c.desc for c in char_results if c.desc] + ([background_desc.strip()] if background_desc.strip() else []))
-        basis = flat if char_results else background_tags
+        basis = flat  # 인물칸이 없으면 flat = (no_humans) + 배경 태그
         nl_prompt = await generate_nl_or_phrase(intent, basis, [], nl_tone, variant, temperature=nl_temperature)
     elif generate_nl:
         char_payload = [

@@ -118,6 +118,31 @@ def drop_counted_people(units: list[dict], dec: dict) -> tuple[list[dict], list[
     return kept, dropped
 
 
+# 인물 없는 장면 → no_humans (2026-11-08 운영 로그 표본 e10: "사람은 아무도 없고"(n=63), "인물이 없음"(n=64)이라고
+# 써도 빠졌다. 분해가 이런 말을 '시각 의미 없는 말'로 버려 조각이 안 남는다. 옛 파이프라인(운영)은 붙였다.)
+# 인원 0 이고 캐릭터가 없을 때만 본다. 둘 중 하나면 붙인다.
+#   1) 입력에 사람이 없다는 말이 있다.
+#   2) 최종 토큰이 전부 DB 태그(구가 없음)이고 2개 이상이며, 사람을 전제하는 대분류(신체·표정·의상·자세 ...)의
+#      태그가 하나도 없다 — 풍경·사물만 있는 장면(Danbooru 관례상 no_humans). 구가 섞이면 판단하지 않는다
+#      ("배구 서브하는 자세"처럼 구로만 남은 사람 동작을 놓치지 않으려고 보수적으로 잡음).
+_NO_PEOPLE_RE = re.compile(
+    r"(사람|인물|인간)\S{0,2}\s*(아무도\s*)?없|아무도\s*없|\bno\s+(humans?|people|persons?|one|characters?)\b|\bnobody\b",
+    re.IGNORECASE)
+_PERSON_MAJORS = {"신체", "신체 특징", "표정", "패션", "의상", "복장", "의류", "자세", "포즈", "동작", "행동", "행위",
+                  "인물", "외형", "머리", "머리카락", "장신구", "액세서리", "코스프레", "캐릭터", "종족", "성인", "H",
+                  "성적 표현", "성행위"}
+
+
+def needs_no_humans(text: str, tokens: list[str], variant: str) -> bool:
+    """인원 0·캐릭터 없음이 확인된 장면에서 no_humans 를 붙일지 (위 규칙). tokens = 최종 본문 토큰."""
+    if _NO_PEOPLE_RE.search(text or ""):
+        return True
+    defs = search_mod.get_definitions(variant)
+    if len(tokens) < 2 or any(t not in defs for t in tokens):
+        return False
+    return not any(defs[t].get("major") in _PERSON_MAJORS for t in tokens)
+
+
 def all_candidates(units: list[dict], cats_list: list[set[int]], variant: str) -> list[list[dict]]:
     """
     조각별 후보: 어휘 일치 → 한국어 질의 → 영어 질의 순서로 합치고 중복 제거.
@@ -344,6 +369,8 @@ async def stream_structured_pipeline(
 
     # ── 4. 최종 조립 + 이중 방어 ──
     char_tags, body, dropped_db = assemble(picks, all_cands, len(chars), variant)
+    if not count and not chars and "no_humans" not in body and needs_no_humans(korean_prompt, body, variant):
+        count = ["no_humans"]
     final = list(dict.fromkeys(count + char_tags + body))
     yield {"stage": "final", "status": "태그 완성", "data": {"final_tags": final, "hallucinated": list(dropped_db)}}
 
