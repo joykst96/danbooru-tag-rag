@@ -493,6 +493,30 @@ async def index():
     )
 
 
+# 프론트엔드 정적 파일(web/: CSS·JS 모듈). index.html 과 함께 배포하므로 매번 변경 확인(no-cache, ETag 304).
+# 확장자별 타입을 직접 정한다: Windows mimetypes 는 레지스트리 영향으로 .js 를 text/plain 으로 줄 수 있고,
+# 그러면 브라우저가 <script type="module"> 을 거부한다.
+WEB_DIR = (PROJECT_ROOT / "web").resolve()
+_WEB_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+}
+
+
+@app.get("/web/{path:path}")
+async def web_asset(path: str):
+    target = (WEB_DIR / path).resolve()
+    if not target.is_relative_to(WEB_DIR) or not target.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(
+        target,
+        media_type=_WEB_TYPES.get(target.suffix.lower()),
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @app.get("/danbooru-tags.csv")
 async def tags_csv():
     if TAGS_CSV_PATH.exists():

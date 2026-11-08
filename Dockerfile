@@ -21,6 +21,7 @@ RUN uv pip install --system --index-url https://download.pytorch.org/whl/cpu tor
 # 애플리케이션 코드
 COPY core/ ./core/
 COPY index.html ./
+COPY web/ ./web/
 
 # 런타임 환경: CPU 임베딩 강제, 데이터 경로는 마운트 위치로
 ENV EMBEDDING_DEVICE=cpu \
