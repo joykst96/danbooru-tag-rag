@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 
 from . import search as search_mod
 from . import llm
-from .pipeline_structured import describe, count_tags, generate_nl_or_phrase, needs_no_humans
+from .pipeline_structured import describe, count_tags, generate_nl_or_phrase, needs_no_humans, strip_weight_syntax
 from .config import MAIN_VARIANT
 
 logger = logging.getLogger(__name__)
@@ -210,7 +210,7 @@ def _drop_name_tokens(tokens: list[str], keys: set[str]) -> list[str]:
 async def _process_character(block: CharBlock, variant: str, top_k: int) -> CharResult:
     res = CharResult(
         name=block.name.strip(), series=block.series.strip(),
-        desc=block.desc.strip(), is_original=block.is_original,
+        desc=strip_weight_syntax(block.desc.strip()), is_original=block.is_original,
         is_passthrough=block.is_passthrough,
     )
 
@@ -287,6 +287,7 @@ async def stream_split_pipeline(
       - "final"      : 평탄 합본 태그
       - "nl"         : 인물 단위 자연어 프롬프트
     """
+    background_desc = strip_weight_syntax(background_desc or "")
     char_results: list[CharResult] = []
     for idx, block in enumerate(characters, 1):
         if not (block.name.strip() or block.series.strip() or block.desc.strip()):

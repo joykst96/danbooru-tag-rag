@@ -143,6 +143,22 @@ def needs_no_humans(text: str, tokens: list[str], variant: str) -> bool:
     return not any(defs[t].get("major") in _PERSON_MAJORS for t in tokens)
 
 
+# NovelAI 가중치 문법 정리 (2026-11-08 운영 로그 표본 e10 n=12: "2::장난스러운::", "-1.5:검은 머리::", "[[노란빛 머리]]").
+# 그대로 두면 빼라는 뜻의 음수 가중치(-1.5:검은 머리::)가 black_hair 로 들어갔다.
+# 가중치 구간 "w::text::"(또는 "w:text::")는 text 만 남기고, 음수 가중치 구간은 지운다. 겹친 괄호 [[ ]] {{ }} 는 벗긴다.
+# "7:3 가르마"처럼 끝에 "::"가 없는 콜론은 건드리지 않는다. 문법이 없는 입력은 글자 그대로 돌려준다.
+_WEIGHT_RE = re.compile(r"(-?\d+(?:\.\d+)?)\s*::?\s*([^:,]*?)\s*::")
+
+
+def strip_weight_syntax(text: str) -> str:
+    if "::" not in text and not re.search(r"[\[\]{}]{2,}", text):
+        return text
+    t = _WEIGHT_RE.sub(lambda m: "" if float(m.group(1)) < 0 else m.group(2), text)
+    t = re.sub(r"[\[\]{}]{2,}", "", t)
+    t = re.sub(r"\s*,(\s*,)+", ",", t)
+    return t.strip(" ,")
+
+
 def all_candidates(units: list[dict], cats_list: list[set[int]], variant: str) -> list[list[dict]]:
     """
     조각별 후보: 어휘 일치 → 한국어 질의 → 영어 질의 순서로 합치고 중복 제거.
@@ -270,6 +286,7 @@ async def describe(text: str, variant: str = MAIN_VARIANT, strip_names: list[str
            "characters": 분해의 characters [{"ko","en"}] (고급 모드가 영어 이름을 얻는 데 쓴다)}
     """
     empty = {"tags": [], "hallucinated": [], "people": {"girls": 0, "boys": 0, "others": 0}, "characters": []}
+    text = strip_weight_syntax(text)
     if not text.strip():
         return empty
     dec = await decompose(text)
@@ -343,6 +360,7 @@ async def stream_structured_pipeline(
 ):
     """structured 를 단계별로 스트리밍. yield {"stage": korean|english|final|nl, "status": 표시 문구, "data": dict}."""
     unit_cats = set(search_categories) if search_categories else set(search_mod.GENERAL_CATS)
+    korean_prompt = strip_weight_syntax(korean_prompt)
 
     # ── 1. 구조화 분해 ──
     dec = await decompose(korean_prompt)
