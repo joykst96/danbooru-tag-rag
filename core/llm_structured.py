@@ -10,6 +10,11 @@ structured 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번
       관계어 문장까지 더 길게 쓴 문구는 인원수가 1문항 더 맞았지만 "벽에 기댐" → [벽][기댐]처럼
       동사+목적어 조각을 쪼개는 부작용이 생겨(20문장 중 5문장 분해 변화) 이 짧은 문구를 골랐다(3문장 변화, 해롭지 않음).
     단어 목록은 넣지 않았다(과적합 방지).
+  - 같은 날 위 문장을 "Animals, monsters and robots are never counted, not even as others, even when named."로,
+    "Named characters also count as people."을 "Named human characters ..."로 바꿨다. 운영 로그 표본(e10)에서
+    포켓몬·디지몬·메카를 others 로 세던 문제(n=34·35·49). 이름 붙은 생물은 앞 규칙만으로는 이름 규칙에 밀려
+    계속 others 로 셌다. 리허설(캐시 끔): 생물·로봇 개발 문장 16개(한·영) 10→15/16, 인원수 64문장(한·영) 122→123/128,
+    20문장 중 4문장 분해 조각 변화(표현만 바뀜). 더 짧은 문구는 이름 붙은 생물을 못 고쳤고, 다른 위치는 조각 변화가 컸다.
 판단 규칙은 v3 와 같고, 바뀐 것은 출력 형식(압축)과 인원수 규칙이다.
   - 분해 출력: {"girls","boys","others","characters":[[ko,en]],"units":[[ko,en]]}  (v3 160토큰 → 약 80토큰)
   - 선택 출력: {"u0":[0],"u1":"phrase"}  (v3 225토큰 → 약 34토큰)
@@ -26,8 +31,8 @@ Output:
   Animals, objects, pictures and body parts are never people.
   girls = any female (소녀, 여자, 여성, 마녀, 여경찰 ...), boys = any male (소년, 남자, 남성 ...).
   Infer the gender from character names and relation words: "신랑과 신부" -> 1 boy, 1 girl; "삼촌과 조카딸" -> 1 boy, 1 girl;
-  "카구야와 시로가네" -> 1 girl, 1 boy; "말 세 마리" -> nobody. Animals are never counted, not even as others. Use others only when the gender truly cannot be known.
-  Named characters also count as people.
+  "카구야와 시로가네" -> 1 girl, 1 boy; "말 세 마리" -> nobody. Animals, monsters and robots are never counted, not even as others, even when named. Use others only when the gender truly cannot be known.
+  Named human characters also count as people.
 - characters: named existing characters or series as [Korean, English] (e.g. 프리렌, 라이덴 쇼군, 원신). Generic roles like 메이드, 간호사, 마법사 are NOT characters.
 - units: every other visual element as [Korean, English], ONE concept per unit: hair color, hairstyle, eyes, accessory, clothing item, role/job, body feature, expression, pose, action, held object, place, background element, weather, time of day, lighting.
 
