@@ -2,8 +2,14 @@
 structured 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택). 2026-11-05 속도판(벤치 v4)으로 갱신.
 (이전 커밋에서는 파일명이 llm_v3.py 였다.)
 
-프롬프트는 tag-embedding 벤치 gen_test/gemma_v4.py 와 글자 단위로 같다(그대로 옮김).
-스키마는 문자열 패턴(TEXT_PATTERN)만 더했다(2026-11-08, 아래 설명).
+프롬프트는 tag-embedding 벤치 gen_test/gemma_v4.py 에서 옮겼고, 2026-11-08 에 두 가지를 바꿨다.
+  - 스키마 문자열 패턴(TEXT_PATTERN, 아래 설명)
+  - 인원수 규칙 한 문장: "Animals are never counted, not even as others."
+    새 모델(QAT Q4_K_M)이 동물을 others 로 세던 문제. 캐시 끔 리허설(로컬 LLM):
+      실행 전에 고정한 새 문장 24개(홀드아웃) 한국어 16→21/24, 영어 17→23/24, 기존 40문장 37→39, 38→39.
+      관계어 문장까지 더 길게 쓴 문구는 인원수가 1문항 더 맞았지만 "벽에 기댐" → [벽][기댐]처럼
+      동사+목적어 조각을 쪼개는 부작용이 생겨(20문장 중 5문장 분해 변화) 이 짧은 문구를 골랐다(3문장 변화, 해롭지 않음).
+    단어 목록은 넣지 않았다(과적합 방지).
 판단 규칙은 v3 와 같고, 바뀐 것은 출력 형식(압축)과 인원수 규칙이다.
   - 분해 출력: {"girls","boys","others","characters":[[ko,en]],"units":[[ko,en]]}  (v3 160토큰 → 약 80토큰)
   - 선택 출력: {"u0":[0],"u1":"phrase"}  (v3 225토큰 → 약 34토큰)
@@ -20,7 +26,7 @@ Output:
   Animals, objects, pictures and body parts are never people.
   girls = any female (소녀, 여자, 여성, 마녀, 여경찰 ...), boys = any male (소년, 남자, 남성 ...).
   Infer the gender from character names and relation words: "신랑과 신부" -> 1 boy, 1 girl; "삼촌과 조카딸" -> 1 boy, 1 girl;
-  "카구야와 시로가네" -> 1 girl, 1 boy; "말 세 마리" -> nobody. Use others only when the gender truly cannot be known.
+  "카구야와 시로가네" -> 1 girl, 1 boy; "말 세 마리" -> nobody. Animals are never counted, not even as others. Use others only when the gender truly cannot be known.
   Named characters also count as people.
 - characters: named existing characters or series as [Korean, English] (e.g. 프리렌, 라이덴 쇼군, 원신). Generic roles like 메이드, 간호사, 마법사 are NOT characters.
 - units: every other visual element as [Korean, English], ONE concept per unit: hair color, hairstyle, eyes, accessory, clothing item, role/job, body feature, expression, pose, action, held object, place, background element, weather, time of day, lighting.
