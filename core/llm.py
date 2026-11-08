@@ -79,6 +79,10 @@ Return ONLY a JSON object, no markdown:
 # 따라서 각 인물마다 [이름(+작품)] + [외형/속성 묘사]를 반드시 한 덩어리로 붙여 쓴다.
 # 캐릭터명이 DB에 없어 태그가 안 잡힌 경우에도 사용자가 적은 이름 문자열을 그대로
 # 살려 쓰되, 그 칸의 묘사 태그로 외형을 채운다(이름만 덩그러니 두지 않는다).
+# 규칙 3 (2026-11-08): 전에는 [original] 칸에 임의 이름("Ren", "Yuna", "Mina" ...)을 지어 붙이게 했는데,
+# 사용자가 적지 않은 이름이 프롬프트에 들어가는 문제가 있었다(운영 로그 표본 e10 n=4·7·16·17·19).
+# 이름 없이 외형 명사로 부르고, 여럿이면 눈에 띄는 외형으로 구분하게 바꿨다.
+# 리허설(문장마다 3회, 개발 4 + e10 고급 모드 23건): 지어낸 이름 없음 60→81/81, 대조군(입력 이름) 유지.
 SYSTEM_NL_MULTI = """You are an expert prompt engineer for the ANIMA anime image generation model.
 
 You are given a SCENE made of one or more CHARACTER blocks and an optional BACKGROUND block. Write a single descriptive English prompt for the whole scene.
@@ -92,7 +96,7 @@ Describe each character in its own SEPARATE sentence. Do NOT pack multiple chara
 RULES:
 1. Write each character as its own clause/sentence: "<Name> from <Series>, with <appearance woven from the tags>, ...". If a character has a series, include it once.
 2. If a block has a name but NO matched tags, still use the name and describe whatever the block's description implies — do not drop the character. A block marked with the [new] flag is a new/unlisted character: use its given name as-is as the character handle even though no canon tags matched.
-3. If a block is marked with the [original] flag, it has no canon name AND no series. Invent a simple fitting first name for that character and use it the same way (name first, then appearance). NEVER invent or attach a series/work to an original character, and NEVER use the word "from" for it — an original character is not "from" anything. Write just the invented name followed by the appearance (e.g. "Aria, with long silver hair, ..."). This gives the model a stable handle so it does not confuse this character with others.
+3. If a block is marked with the [original] flag, it has no canon name AND no series. Do NOT invent a name for it: open with a plain noun consistent with the description (e.g. "A silver-haired girl", "A young man"), then the appearance. NEVER attach a series/work to an original character, and NEVER use the word "from" for it. When there are several such characters, tell them apart by a distinctive visible trait (e.g. "the silver-haired girl", "the boy in the hoodie").
 4. If a block has NO name and is not original, use a plain noun ("A girl", "A boy", "A figure") consistent with the description, then the appearance.
 5. Keep every character visually distinct so the model can separate them. Do not merge two characters' attributes into the same sentence.
 6. End with the background/setting as a shared clause if a BACKGROUND block is given.
@@ -419,7 +423,7 @@ async def generate_nl_multi(
     for i, ch in enumerate(characters, 1):
         parts = [f"CHARACTER {i}:"]
         if ch.get("is_original"):
-            # 오리지널 캐릭터: 작품/캐릭터명 없음. LLM이 임의 이름을 지어 붙인다.
+            # 오리지널 캐릭터: 작품/캐릭터명 없음. 이름을 지어내지 않고 외형 명사로 부른다(2026-11-08, 전에는 임의 이름).
             # 단축 플래그로 전달(장황 안내문이 NL 에 베껴지는 누수 방지). 의미는
             # SYSTEM_NL_MULTI RULE 3/10 이 정의한다.
             parts.append("[original]")

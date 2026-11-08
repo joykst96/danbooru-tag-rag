@@ -53,7 +53,7 @@ class CharBlock:
     name: str = ""        # 캐릭터명(공백 가능)
     series: str = ""      # 작품명(공백 가능)
     desc: str = ""        # 캐릭터묘사(한국어)
-    is_original: bool = False  # 오리지널 캐릭터: 작품/캐릭터 검색 skip, NL이 임의 이름 할당
+    is_original: bool = False  # 오리지널 캐릭터: 작품/캐릭터 검색 skip, NL 은 이름 없이 외형 명사로 부름
     is_passthrough: bool = False  # 패스스루: DB에 없는 신규 캐릭터. 작품/캐릭터 검색 skip, 입력 이름을 NL 핸들로 그대로 사용
 
 
