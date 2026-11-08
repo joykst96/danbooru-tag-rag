@@ -118,6 +118,45 @@ def drop_counted_people(units: list[dict], dec: dict) -> tuple[list[dict], list[
     return kept, dropped
 
 
+# 수식어만 남은 조각 합치기 (2026-11-09, 벤치 gen_test/e13_precision).
+# 분해가 "검은색 밀리터리 복장"을 [검은색][밀리터리 복장]처럼 색·크기·재질 낱말을 따로 떼면, 그 조각이 선택에서
+# 한 단어 구(black, wide)나 근접 오답(white_bird, purple_light, round_table)으로 남았다(e10 n=36·63·71).
+# 분해 프롬프트를 고치는 길은 e10 94건 중 45건을 흔들고 회수를 떨어뜨려 보류했고(벤치 held/README.md),
+# 대신 코드에서 '수식어 낱말만 있는 조각'을 바로 뒤 조각에 합쳐 한 번에 검색·선택한다. 해당 조각이 있는 문장만 바뀐다.
+#   - 감정 낱말은 합치지 않는다("즐거움"처럼 따로 서는 사람 속성 조각).
+#   - 뒤 조각이 머리·눈이면 합치지 않는다(분해 규칙 1: "갈색 단발머리" → brown_hair, short_hair 를 따로).
+#   - 수식어 조각이 마지막이면 그대로 둔다.
+# 이 어휘는 코드 후처리용이다. 분해 프롬프트에는 넣지 않는다.
+_MOD_COLOR = {"black", "white", "red", "blue", "green", "yellow", "purple", "pink", "orange", "brown", "grey", "gray",
+              "silver", "gold", "golden", "navy", "beige", "violet", "crimson", "scarlet", "indigo"}
+_MOD_SHADE = {"light", "dark", "pale", "bright", "deep"}
+_MOD_SIZE = {"big", "small", "large", "tiny", "huge", "giant", "wide", "narrow", "long", "short", "tall", "round"}
+_MOD_MATERIAL = {"wooden", "wood", "metal", "metallic", "leather", "glass", "stone", "iron", "steel"}
+_MOD_MANY = {"many", "numerous", "countless"}
+_MOD_WORDS = _MOD_COLOR | _MOD_SIZE | _MOD_MATERIAL | _MOD_MANY
+_MOD_FILLER = {"a", "an", "the", "color", "colored"}
+_MOD_SKIP_NEXT = re.compile(r"\b(hair|eyes?|eyed|haired)\b")
+
+
+def _modifier_only(en: str) -> bool:
+    w = [x for x in re.split(r"[\s_\-]+", en.lower().strip()) if x and x not in _MOD_FILLER]
+    return bool(w) and all(x in _MOD_WORDS or x in _MOD_SHADE for x in w) and any(x in _MOD_WORDS for x in w)
+
+
+def merge_modifier_units(units: list[dict]) -> list[dict]:
+    """영어 표기가 색·크기·재질 낱말뿐인 조각을 바로 뒤 조각과 합친다(위 설명). 합칠 것이 없으면 그대로."""
+    out, i = [], 0
+    while i < len(units):
+        u = dict(units[i])
+        while _modifier_only(u["en"]) and i + 1 < len(units) and not _MOD_SKIP_NEXT.search(units[i + 1]["en"].lower()):
+            nxt = units[i + 1]
+            u = {"ko": f"{u['ko']} {nxt['ko']}", "en": f"{u['en']} {nxt['en']}"}
+            i += 1
+        out.append(u)
+        i += 1
+    return out
+
+
 # 인물 없는 장면 → no_humans (2026-11-08 운영 로그 표본 e10: "사람은 아무도 없고"(n=63), "인물이 없음"(n=64)이라고
 # 써도 빠졌다. 분해가 이런 말을 '시각 의미 없는 말'로 버려 조각이 안 남는다. 옛 파이프라인(운영)은 붙였다.)
 # 인원 0 이고 캐릭터가 없을 때만 본다. 둘 중 하나면 붙인다.
@@ -292,7 +331,7 @@ async def describe(text: str, variant: str = MAIN_VARIANT, strip_names: list[str
     dec = await decompose(text)
     name_keys = {search_mod.norm_name(n) for n in (strip_names or [])} - {""}
     units = []
-    for u in drop_counted_people(to_units(dec.get("units")), dec)[0]:
+    for u in merge_modifier_units(drop_counted_people(to_units(dec.get("units")), dec)[0]):
         ko = search_mod.strip_names_from_text(u["ko"], strip_names).strip() if strip_names else u["ko"]
         if ko and search_mod.norm_name(u["en"]) not in name_keys:
             units.append({"ko": " ".join(ko.split()), "en": u["en"]})
@@ -368,6 +407,7 @@ async def stream_structured_pipeline(
     units, dropped_people = drop_counted_people(to_units(dec.get("units")), dec)
     if dropped_people:
         logger.info(f"structured 사람 낱말 조각 제외(인원수로 셈): {[u['ko'] + '/' + u['en'] for u in dropped_people]}")
+    units = merge_modifier_units(units)
     count = count_tags(dec)
     logger.info(f"structured 분해: 인원={count} 캐릭터={[c['ko'] for c in chars]} 조각={[u['ko'] + '/' + u['en'] for u in units]}")
     yield {"stage": "korean", "status": "한국어 키워드 추출 완료",
