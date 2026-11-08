@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 시스템 프롬프트
 # ---------------------------------------------------------------------------
+# SYSTEM_NL 규칙 3 (2026-11-08): 전에는 캐릭터 태그가 없으면 무조건 'A girl' 등으로 시작하게 해서,
+# 사람 없는 장면(풍경·사물·표정만)에도 사람과 성별을 지어냈다(운영 로그 표본 e10 n=61·80·84).
+# 인원수 태그가 있을 때만 사람 명사로 시작하고, 없으면 사람·성별을 만들지 않게 바꿨다.
+# 리허설(rich 톤, 문장마다 3회): e10 인원수 태그 없는 문장 성별 낱말 없음 48→57/57,
+# 사람 없는 개발 문장 21→24/24, 인원수 태그 있는 문장의 사람 명사 시작 49→50/51(대조군 유지).
 SYSTEM_NL = """You are a prompt writer for the ANIMA image generation model.
 Given a Korean intent and English keywords, write a natural-language English prompt that conveys the keywords.
 Rules:
@@ -37,7 +42,7 @@ Rules:
    - Without series (bare name tag): start "<Name>, ...".
    - The word "from" linking a character to its series must always be kept, regardless of tone.
    - If MULTIPLE character tags are present, open with each character (name first, then appearance), one per clause.
-3. If NO character tag is present, use a plain noun like 'A girl', 'A boy', 'A man', 'A woman' to open, then appearance.
+3. If NO character tag is present: when the keywords have a person count tag (1girl, 2boys, 1other ...), open with a matching plain noun like 'A girl', 'A boy', 'A man', 'A woman', then appearance. When they have none, never invent a person or a gender; describe only what the keywords show.
 4. Standard capitalization for character/series names; convert tag underscores to spaces in the prose.
 {TONE_RULES}
 Return ONLY the raw prompt text. No markdown, no explanations."""
