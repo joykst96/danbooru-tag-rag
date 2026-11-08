@@ -100,21 +100,40 @@ def _gender(people: dict) -> str | None:
 
 async def _describe_attr(
     desc: str, variant: str,
-    strip_names: list[str] | None = None, name_hint: str = "",
-) -> tuple[list[str], dict]:
+    strip_names: list[str] | None = None, name_hint: str = "", series_hint: str = "",
+) -> tuple[list[str], dict, list[dict]]:
     """
-    캐릭터묘사/배경 텍스트 → (속성 토큰, 분해 인원). structured 분해·검색·선택(describe)에 위임.
+    캐릭터묘사/배경 텍스트 → (속성 토큰, 분해 인원, 분해 characters). structured 분해·검색·선택(describe)에 위임.
 
     strip_names: 조각에서 지울 이름(자기 칸 이름·작품, 배경칸이면 모든 인물 이름).
                  이름이 cat0 검색을 타면 'name_(cosplay)' 같은 파생 태그가 잡히는 오염을 막는다.
     name_hint  : 있으면 "이름: 묘사"로 분해해 이름으로 성별을 추론하게 한다(조각에서는 strip_names 로 지움).
+                 묘사가 비어 있으면 "이름 (작품)"만 분해한다 — 이름만 있는 칸도 성별을 정해 인원수를 세기 위해서다
+                 (2026-11-08 운영 로그 표본 e10: 이름만 있는 칸은 인원수 태그가 하나도 안 붙었다, n=1·3·6·13·15·18·24).
     """
-    if not desc.strip():
-        return [], {}
-    text = f"{name_hint}: {desc}" if name_hint else desc
+    if desc.strip():
+        text = f"{name_hint}: {desc}" if name_hint else desc
+    elif name_hint.strip():
+        text = f"{name_hint} ({series_hint})" if series_hint.strip() else name_hint
+    else:
+        return [], {}, []
     names = [n for n in (strip_names or []) if n and n.strip()]
     res = await describe(text, variant, strip_names=names or None)
-    return _drop_character_derived(res["tags"]), res["people"]
+    return _drop_character_derived(res["tags"]), res["people"], res.get("characters", [])
+
+
+def _name_keys(*names: str) -> set[str]:
+    """이름·태그 → 중복 비교 키(정규화 이름과, 태그면 괄호 한정어를 뗀 본체)."""
+    out = set()
+    for n in names:
+        if n and n.strip():
+            out |= {search_mod.norm_name(n), search_mod.norm_name(search_mod.tag_base(n.strip().replace(" ", "_")))}
+    return out - {""}
+
+
+def _drop_name_tokens(tokens: list[str], keys: set[str]) -> list[str]:
+    """속성 토큰 중 캐릭터 태그·이름·작품과 같은 것을 뺀다(sakura_miko 옆의 'sakura miko' 구 등)."""
+    return [t for t in tokens if search_mod.norm_name(t) not in keys]
 
 
 async def _process_character(block: CharBlock, variant: str, top_k: int) -> CharResult:
@@ -134,9 +153,10 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
         # 'name_(cosplay)' 같은 캐릭터 파생 태그가 잡힌다(캐릭터 정체성은 별도 검색이 담당).
         # 패스스루는 cat4 검색을 안 하지만, 입력 이름이 묘사에 섞이면 오염은 동일하므로
         # 자기 칸 이름/작품을 조각에서 제거하고 파생 태그도 후처리로 거른다.
-        res.attr_tags, people = await _describe_attr(
-            res.desc, variant, strip_names=[res.name, res.series], name_hint=res.name,
+        res.attr_tags, people, _ = await _describe_attr(
+            res.desc, variant, strip_names=[res.name, res.series], name_hint=res.name, series_hint=res.series,
         )
+        res.attr_tags = _drop_name_tokens(res.attr_tags, _name_keys(res.name, res.series))
         res.gender = _gender(people)
         return res
 
@@ -184,10 +204,14 @@ async def _process_character(block: CharBlock, variant: str, top_k: int) -> Char
     # 위의 cat4(search_character_only) 검색이 담당하므로, 묘사칸은 속성/동작만 찾으면 된다.
     # → 자기 name/series 를 조각에서 제거 + _(cosplay) 등 파생 태그 후처리 제거.
     # 오리지널 캐릭터는 이름 입력을 무시하므로 성별 추론에도 쓰지 않는다.
-    res.attr_tags, people = await _describe_attr(
+    res.attr_tags, people, _ = await _describe_attr(
         res.desc, variant, strip_names=[res.name, res.series],
         name_hint="" if res.is_original else res.name,
+        series_hint="" if res.is_original else res.series,
     )
+    # 캐릭터 태그·이름·작품과 같은 속성 토큰 제거 (e10 리허설 n=5: sakura_miko 옆에 'sakura miko' 구가 붙음)
+    res.attr_tags = _drop_name_tokens(
+        res.attr_tags, _name_keys(*res.char_tags, *res.series_tags, res.name, res.series))
     res.gender = _gender(people)
     return res
 
@@ -230,7 +254,8 @@ async def stream_split_pipeline(
 
     # 배경. 인물 이름은 검색에서 제거(공통칸 동작지시가 cosplay 등 오염 유발 방지)
     _names = [b.name for b in characters if b.name.strip()]
-    background_tags, _ = await _describe_attr(background_desc, variant, strip_names=_names)
+    background_tags, _, _ = await _describe_attr(background_desc, variant, strip_names=_names)
+    background_tags = _drop_name_tokens(background_tags, _name_keys(*_names))
     yield {
         "stage": "background",
         "status": "배경 처리 완료",

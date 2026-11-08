@@ -284,6 +284,23 @@ def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# 이름 정규화 (2026-11-08 운영 로그 표본 e10)
+# ---------------------------------------------------------------------------
+# 이름 비교용 정규화 (고급 모드에서 캐릭터 이름과 같은 속성 토큰·조각을 거를 때 쓴다)
+_QUAL_RE = re.compile(r"(_\([^)]*\))+$")
+
+
+def norm_name(s: str) -> str:
+    """이름 비교용 정규화: 소문자, 글자·숫자만(공백·밑줄·구두점 제거)."""
+    return re.sub(r"[\W_]+", "", (s or "").lower())
+
+
+def tag_base(tag: str) -> str:
+    """태그 본체: 끝의 괄호 한정어를 뗀 이름. laplace_(nikke) → laplace, saber_alter_(ver._shinjuku_1999) → saber_alter."""
+    return _QUAL_RE.sub("", tag)
+
+
 def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:
     """
     여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (structured 속도판).

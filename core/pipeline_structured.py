@@ -239,26 +239,31 @@ async def describe(text: str, variant: str = MAIN_VARIANT, strip_names: list[str
     분해의 characters 는 버린다(고급 모드는 캐릭터를 이름 칸으로 따로 찾는다).
     strip_names: 조각의 한국어 표기에서 이 이름들을 지운다(지우고 비면 조각을 버림) —
                  이름이 cat0 검색을 타면 'name_(cosplay)' 같은 파생 태그가 잡히기 때문.
-    반환: {"tags": 본문 토큰, "hallucinated": DB 밖 태그, "people": {"girls","boys","others"}}
+                 영어 표기가 이름과 똑같은 조각도 버린다: 이름을 영어로 적은 칸("sakura miko")에서 분해가
+                 한국어 표기("사쿠라 미코")로 조각을 만들면 한국어 지우기에 안 걸려 'sakura miko' 구가 남았다(e10 n=5).
+    반환: {"tags": 본문 토큰, "hallucinated": DB 밖 태그, "people": {"girls","boys","others"},
+           "characters": 분해의 characters [{"ko","en"}] (고급 모드가 영어 이름을 얻는 데 쓴다)}
     """
-    empty = {"tags": [], "hallucinated": [], "people": {"girls": 0, "boys": 0, "others": 0}}
+    empty = {"tags": [], "hallucinated": [], "people": {"girls": 0, "boys": 0, "others": 0}, "characters": []}
     if not text.strip():
         return empty
     dec = await decompose(text)
+    name_keys = {search_mod.norm_name(n) for n in (strip_names or [])} - {""}
     units = []
     for u in drop_counted_people(to_units(dec.get("units")), dec)[0]:
         ko = search_mod.strip_names_from_text(u["ko"], strip_names).strip() if strip_names else u["ko"]
-        if ko:
+        if ko and search_mod.norm_name(u["en"]) not in name_keys:
             units.append({"ko": " ".join(ko.split()), "en": u["en"]})
     people = {k: int(dec.get(k, 0) or 0) for k in ("girls", "boys", "others")}
+    chars = to_units(dec.get("characters"))
     if not units:
-        return {**empty, "people": people}
+        return {**empty, "people": people, "characters": chars}
     cands = all_candidates(units, [set(search_mod.GENERAL_CATS)] * len(units), variant)
     picks, notes = await select(text, units, cands, variant)
     if notes:
         logger.info(f"structured(묘사) 선택 메모: {notes}")
     _, body, dropped = assemble(picks, cands, 0, variant)
-    return {"tags": list(dict.fromkeys(body)), "hallucinated": dropped, "people": people}
+    return {"tags": list(dict.fromkeys(body)), "hallucinated": dropped, "people": people, "characters": chars}
 
 
 async def generate_nl_or_phrase(
