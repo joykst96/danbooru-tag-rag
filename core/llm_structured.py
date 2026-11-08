@@ -2,7 +2,8 @@
 structured 파이프라인의 LLM 프롬프트 (구조화 분해 / 조각별 번호 선택). 2026-11-05 속도판(벤치 v4)으로 갱신.
 (이전 커밋에서는 파일명이 llm_v3.py 였다.)
 
-tag-embedding 벤치 gen_test/gemma_v4.py 의 프롬프트·스키마와 글자 단위로 같다(그대로 옮김).
+프롬프트는 tag-embedding 벤치 gen_test/gemma_v4.py 와 글자 단위로 같다(그대로 옮김).
+스키마는 문자열 패턴(TEXT_PATTERN)만 더했다(2026-11-08, 아래 설명).
 판단 규칙은 v3 와 같고, 바뀐 것은 출력 형식(압축)과 인원수 규칙이다.
   - 분해 출력: {"girls","boys","others","characters":[[ko,en]],"units":[[ko,en]]}  (v3 160토큰 → 약 80토큰)
   - 선택 출력: {"u0":[0],"u1":"phrase"}  (v3 225토큰 → 약 34토큰)
@@ -45,22 +46,26 @@ RULES
 
 Return ONLY compact JSON on a single line, matching the schema."""
 
-SCHEMA_DECOMPOSE = {'type': 'object',
- 'properties': {'girls': {'type': 'integer', 'minimum': 0, 'maximum': 6},
-                'boys': {'type': 'integer', 'minimum': 0, 'maximum': 6},
-                'others': {'type': 'integer', 'minimum': 0, 'maximum': 6},
-                'characters': {'type': 'array',
-                               'items': {'type': 'array',
-                                         'items': {'type': 'string'},
-                                         'minItems': 2,
-                                         'maxItems': 2}},
-                'units': {'type': 'array',
-                          'items': {'type': 'array',
-                                    'items': {'type': 'string'},
-                                    'minItems': 2,
-                                    'maxItems': 2}}},
- 'required': ['girls', 'boys', 'others', 'characters', 'units'],
- 'additionalProperties': False}
+# 문자열 안에 대괄호·큰따옴표를 못 쓰게 하는 패턴 (llama.cpp 가 스키마 문법으로 강제).
+# 모델을 QAT Q4_K_M 으로 바꾼 뒤, 일부 문장에서 모델이 쌍의 첫 문자열 뒤에 배열을
+# 닫으려다(스키마는 2개 항목을 요구) 닫는 기호를 문자열 안에 써 버려 ["눈], ","], ["] 처럼 깨졌다.
+# 유효한 JSON 이라 파싱 실패로 잡히지 않고 조각이 사라졌다(새 장면 10개 중 2~3개, llama.cpp 두 빌드에서 모두 재현).
+# 패턴을 걸면 모델이 문자열을 닫고 영어를 이어 쓴다. 정상 문장 17개는 출력이 글자 단위로 같았다(캐시 끔).
+TEXT_PATTERN = r'^[^\[\]"]*$'
+_TEXT = {"type": "string", "pattern": TEXT_PATTERN}
+_PAIR = {"type": "array", "items": _TEXT, "minItems": 2, "maxItems": 2}
+SCHEMA_DECOMPOSE = {
+    "type": "object",
+    "properties": {
+        "girls": {"type": "integer", "minimum": 0, "maximum": 6},
+        "boys": {"type": "integer", "minimum": 0, "maximum": 6},
+        "others": {"type": "integer", "minimum": 0, "maximum": 6},
+        "characters": {"type": "array", "items": _PAIR},
+        "units": {"type": "array", "items": _PAIR},
+    },
+    "required": ["girls", "boys", "others", "characters", "units"],
+    "additionalProperties": False,
+}
 
 # ── 2. 조각별 선택 (스키마는 호출 시 조각마다 만든다: pipeline_structured.select) ──
 SYSTEM_SELECT = """You choose Danbooru tags for each search unit of an anime image description.

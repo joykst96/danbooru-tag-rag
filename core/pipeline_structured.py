@@ -34,7 +34,7 @@ from . import search as search_mod
 from .config import MAIN_VARIANT, LLM_SEED
 from .exceptions import LLMError
 from .llm import _call_json
-from .llm_structured import SYSTEM_DECOMPOSE, SCHEMA_DECOMPOSE, SYSTEM_SELECT
+from .llm_structured import SYSTEM_DECOMPOSE, SCHEMA_DECOMPOSE, SYSTEM_SELECT, TEXT_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +57,23 @@ def count_tags(dec: dict) -> list[str]:
     return out
 
 
+_BROKEN = set('[]"')
+# 구(phrase) 문자열: 분해와 같은 문자 제한 + 빈 문자열 금지(패턴이 있으면 llama.cpp 는 minLength 를 보지 않는다)
+PHRASE_PATTERN = TEXT_PATTERN.replace("*$", "+$")
+
+
 def to_units(pairs: list) -> list[dict]:
-    """분해의 [한국어, 영어] 쌍 → {"ko","en"}. 형식이 어긋난 항목은 버린다."""
+    """
+    분해의 [한국어, 영어] 쌍 → {"ko","en"}. 형식이 어긋난 항목은 버린다.
+    대괄호·큰따옴표가 든 문자열은 JSON 구분자가 문자열 안으로 샌 붕괴 출력이라 버린다
+    (스키마 패턴이 막지만, 패턴을 지원하지 않는 서버에 대비한 이중 방어).
+    """
     out = []
     for p in pairs or []:
         if isinstance(p, (list, tuple)) and len(p) == 2 and str(p[0]).strip():
-            out.append({"ko": str(p[0]).strip(), "en": str(p[1]).strip()})
+            ko, en = str(p[0]).strip(), str(p[1]).strip()
+            if _BROKEN.isdisjoint(ko + en):
+                out.append({"ko": ko, "en": en})
     return out
 
 
@@ -105,7 +116,8 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
         # 압축 출력: 조각마다 후보 번호 배열, 또는 맞는 후보가 없을 때만 영어 구 문자열
         nums = {"type": "array", "items": {"type": "integer", "enum": list(range(len(cs))) or [0]},
                 "minItems": 1, "maxItems": 3}
-        props[f"u{i}"] = {"anyOf": [nums, {"type": "string", "minLength": 1}]} if cs else {"type": "string", "minLength": 1}
+        phrase = {"type": "string", "pattern": PHRASE_PATTERN}
+        props[f"u{i}"] = {"anyOf": [nums, phrase]} if cs else phrase
     schema = {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
 
     notes: list[str] = []
