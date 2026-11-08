@@ -48,8 +48,6 @@ function buildRequest() {
   }
   const payload = {
     prompt: $("prompt").value.trim(),
-    threshold: parseFloat($("threshold").value),
-    kw_temperature: parseFloat($("kw_temp").value),
     nl_temperature: parseFloat($("nl_temp").value),
     nl_tone: state.nlTone,
     search_categories: getSearchPoolCategories(),

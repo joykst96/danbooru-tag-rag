@@ -210,6 +210,7 @@ async def generate_nl_or_phrase(
     nl_tone: str | None,
     variant: str,
     char_tags: list[str] | None = None,
+    temperature: float | None = None,
 ) -> str:
     """
     자연어 단계 출력 분기: 일반 톤이면 자연어 문장, "phrase"면 단어형 보조출력.
@@ -224,18 +225,19 @@ async def generate_nl_or_phrase(
                 받아 손실을 복구하라는 모순이 되므로, 수렴 전 정보를 입력으로 준다.
                 캐릭터 정체성은 char_tags 를 앞에 보존해 SYSTEM_NL RULE2 의 'X from Y' 오프닝을 살린다.
                 en_units 가 비면 kept 로 폴백.
+    temperature: None 이면 톤별 권장 온도(llm.NL_TONES / PHRASE_TEMPERATURE). UI 슬라이더 값이 오면 그 값.
     """
     if nl_tone == "phrase":
         defs = search_mod.get_definitions(variant)
-        return await llm.generate_phrase(korean_prompt, kept, defs=defs)
+        return await llm.generate_phrase(korean_prompt, kept, defs=defs, temperature=temperature)
     if nl_tone == "plain":
         basis = en_units or kept
         if char_tags:
             basis = char_tags + [t for t in basis if t not in char_tags]
-        return await llm.generate_nl_prompt(korean_prompt, basis, tone=nl_tone)
+        return await llm.generate_nl_prompt(korean_prompt, basis, tone=nl_tone, temperature=temperature)
     # rich(및 기타): 최종 태그 기반. 태그가 비면 영어 분해단위로 폴백.
     nl_basis = kept or en_units
-    return await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
+    return await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone, temperature=temperature)
 
 
 def _phrase_text(p: str) -> str:
@@ -249,6 +251,7 @@ async def stream_structured_pipeline(
     generate_nl: bool = True,
     search_categories: set[int] | None = None,
     nl_tone: str | None = None,
+    nl_temperature: float | None = None,
 ):
     """structured 를 단계별로 스트리밍. yield {"stage": korean|english|final|nl, "status": 표시 문구, "data": dict}."""
     unit_cats = set(search_categories) if search_categories else set(search_mod.GENERAL_CATS)
@@ -282,7 +285,8 @@ async def stream_structured_pipeline(
     # ── 5. 자연어 (기존 톤 기능 그대로) ──
     nl_prompt = ""
     if generate_nl:
-        nl_prompt = await generate_nl_or_phrase(korean_prompt, final, en_units, nl_tone, variant, char_tags=char_tags)
+        nl_prompt = await generate_nl_or_phrase(korean_prompt, final, en_units, nl_tone, variant,
+                                                char_tags=char_tags, temperature=nl_temperature)
     yield {"stage": "nl", "status": "완료", "data": {"nl_prompt": nl_prompt}}
 
 

@@ -168,38 +168,16 @@
           <details class="advanced-settings">
             <summary>온도 미세조정 (고급)</summary>
             <div class="settings-content">
-              <div class="field">
-                <label for="threshold">검색 유사도 기준 (Threshold)</label>
-                <div class="slider-group">
-                  <input type="range" id="threshold" min="0.5" max="1.0" step="0.01" value="0.80" />
-                  <span class="val-display" id="threshold_val">0.80</span>
-                </div>
-              </div>
-
-              <hr class="divider" />
-
               <div class="section-head">
-                <h3 class="sub-title">온도 (Temperature) 설정</h3>
+                <h3 class="sub-title">자연어 생성기 온도 (Temperature)</h3>
                 <p class="help">
                   낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
-                  (너무 높으면 미친 소리를 하기 시작합니다.)
+                  (너무 높으면 미친 소리를 하기 시작합니다.) 태그 분해·선택 단계는 항상 0으로 고정됩니다.
                 </p>
               </div>
 
               <div class="field">
-                <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
-                <div class="slider-group">
-                  <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
-                  <span class="val-display" id="kw_temp_val">0.1</span>
-                </div>
-                <p class="help">
-                  <b class="text-danger">※ 전처리기는 0.1을 강력히 추천합니다.</b><br/>
-                  온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
-                </p>
-              </div>
-
-              <div class="field">
-                <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
+                <label for="nl_temp">온도 (톤별 권장: 묘사적 0.4 · 담백 0.35 · 단어형+ 0.25)</label>
                 <div class="slider-group">
                   <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
                   <span class="val-display" id="nl_temp_val">0.4</span>

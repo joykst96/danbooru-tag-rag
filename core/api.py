@@ -168,9 +168,9 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 class GenerateRequest(BaseModel):
     prompt: str = Field(description="한국어 프롬프트")
-    threshold: float = Field(default=0.0)
-    kw_temperature: float = Field(default=0.1)
-    nl_temperature: float = Field(default=0.4)
+    nl_temperature: float | None = Field(
+        default=None, description="자연어 온도. None 이면 톤별 권장값(분해·선택은 항상 0)"
+    )
     search_categories: list[int] | None = Field(
         default=None, description="검색 풀 카테고리(고급). None/빈값이면 일반(cat0)만"
     )
@@ -199,7 +199,9 @@ class CharBlockIn(BaseModel):
 class GenerateSplitRequest(BaseModel):
     characters: list[CharBlockIn] = Field(default_factory=list, description="인물칸 목록")
     background: str = Field(default="", description="배경/공통요소(한국어)")
-    nl_temperature: float = Field(default=0.4)
+    nl_temperature: float | None = Field(
+        default=None, description="자연어 온도. None 이면 톤별 권장값"
+    )
     nl_tone: str | None = Field(
         default=None,
         description="자연어 톤: rich/plain. None이면 rich. 단어형 보조출력: phrase",
@@ -245,6 +247,7 @@ async def generate(req: GenerateRequest, request: Request):
                 generate_nl=True,
                 search_categories=_cats,
                 nl_tone=req.nl_tone,
+                nl_temperature=req.nl_temperature,
             )
             async for ev in _events:
                 stage = ev["stage"]
@@ -282,9 +285,7 @@ async def generate(req: GenerateRequest, request: Request):
                 settings={
                     "톤": req.nl_tone or "rich",
                     "검색범위": req.search_categories or "일반(기본)",
-                    "유사도": req.threshold,
-                    "전처리기온도": req.kw_temperature,
-                    "자연어온도": req.nl_temperature,
+                    "자연어온도": req.nl_temperature if req.nl_temperature is not None else "톤 기본",
                 },
             )
         except Exception as e:
@@ -349,6 +350,7 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 top_k=5,
                 generate_nl=True,
                 nl_tone=req.nl_tone,
+                nl_temperature=req.nl_temperature,
             ):
                 stage = ev["stage"]
                 d = ev["data"]
@@ -412,7 +414,7 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 mode="split",
                 settings={
                     "톤": req.nl_tone or "rich",
-                    "자연어온도": req.nl_temperature,
+                    "자연어온도": req.nl_temperature if req.nl_temperature is not None else "톤 기본",
                     "인물수": len(req.characters),
                 },
             )

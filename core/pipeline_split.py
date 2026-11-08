@@ -199,6 +199,7 @@ async def stream_split_pipeline(
     top_k: int = 5,
     generate_nl: bool = True,
     nl_tone: str | None = None,
+    nl_temperature: float | None = None,
 ):
     """
     분할입력 파이프라인 스트리밍 (async generator).
@@ -258,9 +259,13 @@ async def stream_split_pipeline(
     # 인물 단위 NL. 인물칸이 없으면(배경만) 기본 모드와 같은 단일 장면 생성기를 쓴다:
     # SYSTEM_NL_MULTI 는 CHARACTER 블록이 하나 이상이라고 전제해서, 배경만 주면 모델이
     # "Please provide the CHARACTER blocks ..." 같은 요청 문장을 내는 경우가 있었다(2026-11-08 실측).
+    # 단어형+(phrase)도 기본 모드와 같은 구 생성기를 쓴다. generate_nl_multi 에는 phrase 톤이 없어서
+    # 문장이 나왔고, UI 는 그 문장을 쉼표로 잘라 구 뱃지로 그렸다(2026-11-08 확인).
     nl_prompt = ""
-    if generate_nl and not char_results:
-        nl_prompt = await generate_nl_or_phrase(background_desc.strip(), background_tags, [], nl_tone, variant)
+    if generate_nl and (not char_results or nl_tone == "phrase"):
+        intent = " / ".join([c.desc for c in char_results if c.desc] + ([background_desc.strip()] if background_desc.strip() else []))
+        basis = flat if char_results else background_tags
+        nl_prompt = await generate_nl_or_phrase(intent, basis, [], nl_tone, variant, temperature=nl_temperature)
     elif generate_nl:
         char_payload = [
             {"name": c.name, "series": c.series, "tags": c.nl_tags(), "desc": c.desc, "is_original": c.is_original, "is_passthrough": c.is_passthrough}
@@ -271,6 +276,7 @@ async def stream_split_pipeline(
             background_tags=background_tags,
             background_desc=background_desc.strip(),
             tone=nl_tone,
+            temperature=nl_temperature,
         )
     yield {
         "stage": "nl",

@@ -41,8 +41,6 @@ on($("fixed_quality"), "input", onQualityInput);
 on($("add_artist_btn"), "click", () => addArtistRow());
 
 // ── 슬라이더 값 표시 ──
-bindSliderValue("threshold", "threshold_val", 2);
-bindSliderValue("kw_temp", "kw_temp_val", 1);
 bindSliderValue("nl_temp", "nl_temp_val", 1);
 bindSliderValue("direct_threshold", "direct_threshold_val", 2);
 
