@@ -222,14 +222,36 @@ async def _call_json(
     - 캐시를 켠 호출에서 드물게(벤치 69회 중 1회, 영어 입력) 스키마를 벗어난 혼잣말이 출력 한도까지 반복됐다.
       같은 입력을 캐시 끄고 보내면 정상 → 응답이 비거나·JSON 이 깨지거나·한도에 걸리면 캐시를 끄고 1회 재시도.
     - 출력 한도 512: 분해·선택 출력은 100토큰 안팎이라 충분하고, 실패 시 낭비 시간을 줄인다(~38 tok/s).
+    - 그래도 실패하고 temperature 가 0 이면, 캐시를 끄고 온도 RETRY_TEMPERATURE 로 seed+1, seed+2, seed+3 을
+      차례로 보낸다(seed 고정이라 같은 서버에서는 재현된다).
+      2026-11-08 "눈물을 참으며 억지로 웃는 표정": 온도 0 에서 모델이 쌍 문자열 안에 닫는 기호를 쓰려는
+      붕괴 경로로 가고, 스키마 패턴(llm_structured.TEXT_PATTERN)이 그 문자를 막으면 llama.cpp 가
+      500("does not match the expected peg-gemma4 format")을 매번 냈다. 온도 0 이면 seed·캐시와 관계없이 같은 경로다.
+      seed 10개 성공률(로컬 b12192): 온도 0.3 7/10, 0.5 8/10, 0.7 7/10(+전각 괄호 섞인 붕괴 2). 그래서 0.5 로 3회.
+      실패한 호출에만 타는 경로라 정상 호출의 출력은 바뀌지 않는다.
     """
     try:
         return await _call_json_once(system, user, schema, name, temperature, seed, timeout, LLM_CACHE_PROMPT)
     except LLMError as e:
-        if not LLM_CACHE_PROMPT:
-            raise
-        logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
-        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)
+        if LLM_CACHE_PROMPT:
+            logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
+            try:
+                return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)
+            except LLMError as e2:
+                e = e2
+        if temperature > 0:
+            raise e
+        for k in range(1, RETRY_SEEDS + 1):
+            logger.warning(f"구조화 호출 실패 → 온도 {RETRY_TEMPERATURE}, seed {seed + k} 로 재시도 ({name}): {e}")
+            try:
+                return await _call_json_once(system, user, schema, name, RETRY_TEMPERATURE, seed + k, timeout, False)
+            except LLMError as e3:
+                e = e3
+        raise e
+
+
+RETRY_TEMPERATURE = 0.5  # _call_json 의 마지막 재시도 온도·횟수 (위 docstring)
+RETRY_SEEDS = 3
 
 
 async def _call_json_once(system, user, schema, name, temperature, seed, timeout, cache_prompt) -> dict:
