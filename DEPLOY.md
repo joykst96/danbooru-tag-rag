@@ -7,22 +7,18 @@
 ```
 danbooru-tags-rag/
 ├── data/                     # LanceDB 인덱스 — GPU 머신에서 빌드해 복사
-│   ├── embeddinggemma-2/
-│   │   └── lancedb_sim/      # ★ 본선 (기본 EMBEDDING_PROFILE=gemma2). 없으면 검색 전부 실패
-│   ├── lancedb_b/            # 되돌리기용 (EMBEDDING_PROFILE=e5 일 때 본선)
-│   ├── lancedb_c/            # e5 선택 (직접조회 비교용)
-│   └── lancedb_a/            # 폐기 — 안 올려도 됨
+│   └── embeddinggemma-2/
+│       └── lancedb_sim/      # ★ 본선 인덱스. 없으면 검색 전부 실패
 ├── models/
-│   ├── embeddinggemma-2/        # ★ gemma2 모델 (download_model.py 산출물, 약 1.5GB)
-│   └── multilingual-e5-large/   # 되돌리기용 e5 모델
+│   └── embeddinggemma-2/     # ★ 임베딩 모델 (download_model.py 산출물, 약 1.5GB)
 ├── danbooru-tags.csv         # 태그 호버 설명용 (UI가 /danbooru-tags.csv 로 fetch)
 ├── .env                      # 아래 참고
 ├── logs/                     # 생성 로그 저장 위치 (쓰기 가능, 자동 생성되나 미리 mkdir 권장)
-├── index.html                # UI (이미지에 COPY됨 — 수정 시 --build 필요)
+├── index.html  web/          # UI (이미지에 COPY됨 — 수정 시 --build 필요)
 ├── core/ Dockerfile docker-compose.yml pyproject.toml
 ```
 
-### 모델·인덱스 준비 (embeddinggemma-2, 2026-11-05~)
+### 모델·인덱스 준비
 
 ```bash
 python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
@@ -31,17 +27,9 @@ EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lanced
 
 - 빌더는 처음 실행할 때 새 한국어 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다. 서빙 컨테이너는 이 CSV가 필요 없습니다(정의·별칭이 인덱스에 들어 있음).
 - 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.
-- 검증 기록(tag-embedding 벤치):
-  - 이 빌더가 만든 sim 인덱스는 벤치 인덱스(ns)와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
-  - 로컬 `models/` 폴더에서 불러온 모델과 HF 캐시에서 불러온 모델의 벡터 차이도 0입니다.
-
-### 되돌리기 (e5 + 기존 4회 분해 파이프라인)
-
-`.env`에 `EMBEDDING_PROFILE=e5` 한 줄만 넣고 재시작하면 됩니다. 파이프라인 기본값도 `decomposed`로 같이 돌아갑니다.
-이 경로는 코드가 그대로 보존돼 있습니다. 모델 호출 인자, 빌더 레코드, 인덱스 경로, 본선 variant가 변경 전과 같은지 기록을 떠서 비교했습니다.
-이때 `data/lancedb_b`와 `models/multilingual-e5-large`가 있어야 합니다.
-
-인덱스 빌드(data/)는 **GPU 머신에서** 수행해 서버로 복사하는 것을 권장합니다. CPU 빌드는 매우 느립니다(데이터셋 규모에 따라 수 시간). 임베딩 벡터는 device와 무관하게 동일하므로, CUDA로 빌드한 인덱스를 CPU 서빙에 그대로 쓸 수 있습니다(빌드 머신과 서빙 머신이 달라도 됩니다).
+- 임베딩 벡터는 디바이스와 무관하게 같으므로, CUDA로 빌드한 인덱스를 CPU 서빙에 그대로 씁니다.
+- 검증 기록(tag-embedding 벤치): 이 빌더가 만든 sim 인덱스는 벤치 인덱스(ns)와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
+  2026-11-08 리팩터(a/b/c 변형 제거) 전후로 임베딩 대상 텍스트·레코드 메타 해시가 같아 **재빌드는 필요 없습니다.**
 
 ## .env
 
@@ -51,16 +39,14 @@ LLM_API_URL=http://host.docker.internal:8080/v1/chat/completions
 LLM_MODEL=your-model-name
 LLM_THINKING=off
 EMBEDDING_DEVICE=cpu          # GPU 서빙 시 cuda
-# EMBEDDING_PROFILE=gemma2    # 기본값. e5 로 바꾸면 이전 배포와 같은 동작(되돌리기)
-# PIPELINE=structured         # 기본값(gemma2). decomposed = 기존 4회 분해. e5 프로필의 기본값은 decomposed
-# LLM_CACHE_PROMPT=on         # structured 구조화 호출의 프롬프트 캐시 (off = 재현성 우선, 느림)
+# LLM_CACHE_PROMPT=on         # 분해·선택 호출의 프롬프트 캐시 (off = 재현성 우선, 느림)
 ```
 
-structured 파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 씁니다. 확인한 서버 빌드는 b12004입니다.
-structured의 구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
-structured의 구조화 호출은 프롬프트 캐시를 켭니다(`LLM_CACHE_PROMPT`, 기본 on). 이 서버는 MoE 일부를 CPU에 둬서 프롬프트 처리가 초당 약 150~200토큰으로 느리기 때문에, 캐시를 켜면 호출당 3~5초가 빨라집니다.
+파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 쓰고, 문자열에 `pattern`(대괄호·큰따옴표 금지)을 겁니다. 확인한 서버 빌드는 llama.cpp b12004와 b12192입니다. `pattern`을 지원하지 않는 서버에서는 코드가 깨진 조각을 버리는 것으로만 방어합니다.
+구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
+구조화 호출은 프롬프트 캐시를 켭니다(`LLM_CACHE_PROMPT`, 기본 on). 이 서버는 MoE 일부를 CPU에 둬서 프롬프트 처리가 초당 약 150~200토큰으로 느리기 때문에, 캐시를 켜면 호출당 3~5초가 빨라집니다.
 캐시를 켜면 같은 입력의 결과가 실행마다 조금 다를 수 있습니다. 재현성이 필요하면 `LLM_CACHE_PROMPT=off`로 바꾸면 되고, 대신 느려집니다.
-캐시를 켠 호출이 드물게 스키마를 벗어나 출력 한도까지 반복되면, 자동으로 캐시를 끄고 한 번 재시도합니다(로그: `구조화 호출 실패 → 캐시 끄고 재시도`).
+응답이 비거나 출력 한도까지 반복되면, 자동으로 캐시를 끄고 한 번 재시도합니다(로그: `구조화 호출 실패 → 캐시 끄고 재시도`).
 
 호스트에 llama.cpp(또는 OpenAI 호환 chat completions 엔드포인트)가 떠 있어야 합니다.
 포트·모델명이 다르면 `LLM_API_URL`·`LLM_MODEL`을 환경에 맞게 수정합니다.
@@ -78,20 +64,21 @@ docker compose logs -f          # "준비 완료" 뜨면 OK
 확인:
 
 ```bash
-curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","embedding":"gemma2","pipeline":"structured"}
+curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","embedding":"embeddinggemma-2"}
 ```
 
 브라우저: http://<서버>:3333
 
-> UI(index.html)를 수정한 경우 이미지에 COPY되므로 **반드시 `--build`로 재빌드**해야 반영됩니다.
+> UI(`index.html`, `web/`)를 수정한 경우 이미지에 COPY되므로 **반드시 `--build`로 재빌드**해야 반영됩니다.
 
 ## 점검 포인트 (배포 직후)
 
-- /api/health → variant sim / embedding gemma2 / pipeline structured 확인 (되돌린 경우 variant b / e5 / decomposed)
+- /api/health → variant sim / embedding embeddinggemma-2 확인
 - UI에서 한국어 묘사 → Danbooru태그 + 자연어 정상 출력
 - 캐릭터 이름 포함 입력(예: "원신 라이덴 쇼군") → 캐릭터 태그가 맨 앞에 오는지 확인
 - 태그 칩에 마우스 올리면 CSV 설명 툴팁(없으면 CSV 서빙/경로 확인)
 - 직접조회(우측)로 "은발" 검색 → grey_hair 등 일반태그 확인
+- 고급 모드에서 소녀 두 칸 → 최종 태그 맨 앞이 `2girls`인지 확인
 - 자연어 톤 단어형+ → 결과 영역에 구가 뱃지로 뜨고 휠로 가중치 조절되는지
 - 가중치 표기 NAI 토글 → 뱃지/복사가 `weight::tag::`로 바뀌고, 휠 재조절 시 표기가 중첩되지 않는지
 - 고정 태그 위치(맨앞/맨뒤)·우선순위 전환 → 결과 뱃지 순서와 "모두 복사" 출력이 일치하는지
@@ -100,8 +87,8 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","emb
 ## 클라이언트 캐시 (업데이트 반영)
 
 `index.html`은 `Cache-Control: no-cache, no-store, must-revalidate`로 서빙되어, 업데이트 후
-일반 새로고침만으로 최신 UI가 반영됩니다(강제 새로고침 불필요). `danbooru-tags.csv`는 `no-cache`로
-ETag 재검증(미변경 시 304)하여 묵은 파일을 막으면서 대역폭을 절약합니다.
+일반 새로고침만으로 최신 UI가 반영됩니다(강제 새로고침 불필요). `web/` 아래 CSS·JS와 `danbooru-tags.csv`는
+`no-cache`로 ETag 재검증(미변경 시 304)하여 묵은 파일을 막으면서 대역폭을 절약합니다.
 
 > 단, 캐시 헤더가 박히기 **이전** 버전을 캐싱 중인 기존 사용자는 이번 배포 한 번만 강제 새로고침이
 > 필요할 수 있습니다. 그 이후부터는 자동입니다. Cloudflare에 "Cache Everything" 규칙을 걸어둔
@@ -146,15 +133,12 @@ ETag 재검증(미변경 시 304)하여 묵은 파일을 막으면서 대역폭�
   커밋에는 섞이지 않습니다. 기록 실패는 응답을 막지 않습니다(genlog 가 예외를 삼킵니다) — 로그가 안
   남으면 디렉토리 쓰기 권한부터 확인합니다.
 
-## 알려진 미확정 (실데이터로 보정 예정)
+## 알려진 과제
 
-- **별칭매칭(bigram) 미구현** — "은발→grey_hair"가 top_k 밖이면 못 잡는 케이스 잔존(최우선 과제).
-- **일반 모드 캐릭터 해석** — 신규(2단계: 쌍 추출 → 일괄 판별). 실데이터로 검증 필요:
-  (a) 일반인("여자")을 캐릭터로 오추출하는지, (b) 작품명 없는 동명이인 판별 정확도,
-  (c) LLM 호출 2회 추가에 따른 큐 대기 체감.
-- **인원수 정렬** — 프롬프트 규칙(RULE 5)으로 1차 강제. 어기는 빈도 잦으면 코드 후처리 검토.
-- **캐릭터 오프닝 / 출처구조 보존** — 프롬프트 규칙이라 100% 보장 아님. 실배포 NL 로그로 확인.
-- **캐릭터 폴백 threshold** — 현재 DEFAULT_THRESHOLD(0.80). cross-lingual score 압축이라 보정 대상.
+- **인원수에서 동물·관계어를 `others`로 셈**: 고양이 → `1other`, "할머니와 손녀" → 1girl + 1other. 인원수 40문장 기준 한국어 3건·영어 2건(gemma4 26B A4B QAT Q4_K_M).
+- **캐릭터 이름으로 성별을 못 맞추는 경우**: 아냐 포저 → `1boy`.
+- **근접 오답**: 창가 → `against_window`, 가장자리 → `partially_bordered` 처럼 단어는 겹치지만 뜻이 다른 태그를 고르는 경우가 남아 있습니다.
+- **캐릭터 오프닝 / 출처 구조 보존**: 프롬프트 규칙이라 100% 보장은 아닙니다. 실배포 자연어 로그로 확인합니다.
 
 ## 주의
 
