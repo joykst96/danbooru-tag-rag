@@ -28,6 +28,7 @@ api.py·index.html 은 그대로 동작한다. final_tags 에는 태그 외에 �
 """
 
 import logging
+import re
 
 from . import llm
 from . import search as search_mod
@@ -75,6 +76,46 @@ def to_units(pairs: list) -> list[dict]:
             if _BROKEN.isdisjoint(ko + en):
                 out.append({"ko": ko, "en": en})
     return out
+
+
+# 사람 낱말만 있는 조각 (분해 규칙 1 "사람 낱말은 people 로만"을 모델이 어긴 경우의 후처리).
+# 2026-11-08 운영 로그 표본(e10)에서 "여성"/"소녀" 조각이 선택에서 female_orc·hamster_girl 같은 근접 오답에 붙고
+# 자연어까지 오염됐다(n=32·41·75). 인원은 이미 girls/boys/others 로 셌으므로, 그 성별이 1명 이상 세어진
+# 경우에만 버린다(세어지지 않았으면 그대로 둔다 = 기존 동작). 속성이 붙은 조각("성숙한 여성", "여군")은 안 건드린다.
+# 이 목록은 코드 후처리용이다. 분해 프롬프트에는 넣지 않는다(프롬프트 한 줄 변경이 다른 규칙의 분해를 흔든 전례).
+_PERSON_EN = {
+    "girls": {"girl", "girls", "woman", "women", "female", "females", "lady", "ladies"},
+    "boys": {"boy", "boys", "man", "men", "male", "males", "guy", "guys", "gentleman", "gentlemen"},
+    None: {"person", "people", "persons", "human", "humans", "someone", "figure", "figures"},
+}
+_PERSON_KO = {
+    "girls": {"여자", "여성", "소녀", "여인", "아가씨", "여자아이", "여자애"},
+    "boys": {"남자", "남성", "소년", "남자아이", "남자애", "청년", "사내"},
+    None: {"사람", "인물", "누군가", "사람들", "인물들"},
+}
+_COUNT_WORD_EN = {"a", "an", "the", "one", "two", "three", "four", "five", "six", "single", "several", "many"}
+_COUNT_WORD_KO = re.compile(r"^(\d+명?|명|한|두|세|네|다섯|여섯|하나|둘|셋|넷|한명|두명|세명|네명)$")
+
+
+def _person_gender(u: dict) -> str | None | bool:
+    """조각이 사람 낱말만이면 그 성별 키("girls"/"boys", 성별 없는 낱말은 None), 아니면 False."""
+    en = " ".join(w for w in u["en"].lower().replace("_", " ").split() if w not in _COUNT_WORD_EN)
+    ko = "".join(w for w in u["ko"].split() if not _COUNT_WORD_KO.match(w))
+    for g in ("girls", "boys", None):
+        if en in _PERSON_EN[g] or ko in _PERSON_KO[g]:
+            return g
+    return False
+
+
+def drop_counted_people(units: list[dict], dec: dict) -> tuple[list[dict], list[dict]]:
+    """인원수로 이미 센 사람 낱말만 있는 조각을 뺀다. 반환: (남은 조각, 뺀 조각)."""
+    people = {k: int(dec.get(k, 0) or 0) for k in ("girls", "boys", "others")}
+    kept, dropped = [], []
+    for u in units:
+        g = _person_gender(u)
+        counted = g is not False and (people[g] > 0 if g else sum(people.values()) > 0)
+        (dropped if counted else kept).append(u)
+    return kept, dropped
 
 
 def all_candidates(units: list[dict], cats_list: list[set[int]], variant: str) -> list[list[dict]]:
@@ -188,7 +229,7 @@ async def describe(text: str, variant: str = MAIN_VARIANT, strip_names: list[str
         return empty
     dec = await decompose(text)
     units = []
-    for u in to_units(dec.get("units")):
+    for u in drop_counted_people(to_units(dec.get("units")), dec)[0]:
         ko = search_mod.strip_names_from_text(u["ko"], strip_names).strip() if strip_names else u["ko"]
         if ko:
             units.append({"ko": " ".join(ko.split()), "en": u["en"]})
@@ -259,7 +300,9 @@ async def stream_structured_pipeline(
     # ── 1. 구조화 분해 ──
     dec = await decompose(korean_prompt)
     chars = to_units(dec.get("characters"))
-    units = to_units(dec.get("units"))
+    units, dropped_people = drop_counted_people(to_units(dec.get("units")), dec)
+    if dropped_people:
+        logger.info(f"structured 사람 낱말 조각 제외(인원수로 셈): {[u['ko'] + '/' + u['en'] for u in dropped_people]}")
     count = count_tags(dec)
     logger.info(f"structured 분해: 인원={count} 캐릭터={[c['ko'] for c in chars]} 조각={[u['ko'] + '/' + u['en'] for u in units]}")
     yield {"stage": "korean", "status": "한국어 키워드 추출 완료",
