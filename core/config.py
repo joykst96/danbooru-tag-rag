@@ -37,7 +37,7 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", PROJECT_ROOT / "logs"))
 # ---------------------------------------------------------------------------
 # 임베딩 모델 설정
 # ---------------------------------------------------------------------------
-# google/embeddinggemma-2 (2026-11-05 multilingual-e5-large 에서 교체, 근거·실측: tag-embedding 벤치 README).
+# google/embeddinggemma-2 (근거·실측: tag-embedding 벤치 README).
 # embeddinggemma-2 설정 (모델 카드 + 벤치 실측으로 확인)
 #   - 텍스트 인코더만 로드(vision/audio 제외 → 270M). float16 금지(NaN), fp32 로 고정.
 #   - 쿼리·문서 모두 내장 프롬프트 SentenceSimilarity ("task: sentence similarity | query: ") — 카드의 대칭 태스크 방식.
@@ -53,9 +53,6 @@ GEMMA2_PASSAGE_PROMPT = "SentenceSimilarity"
 GEMMA2_CONFIG_KWARGS = {"vision_config": None, "audio_config": None}
 GEMMA2_MAX_SEQ_LENGTH = 8192
 GEMMA2_TOKEN_BUDGET = 32768
-GEMMA2_DIM = 768
-
-
 # 실제 로드 경로: 로컬 폴더가 있으면 그걸, 없으면 HF ID로 폴백
 def get_embedding_model_path() -> str:
     """로컬 모델 폴더가 존재하면 그 경로를, 없으면 HF ID 문자열을 반환."""

@@ -2,7 +2,7 @@
 LLM 모듈
 
 로컬 LLM(llama.cpp 등 OpenAI 호환 엔드포인트) 호출 함수들.
-pipeline 과 benchmark 양쪽에서 재사용한다.
+구조화 호출(_call_json: 분해·선택)은 pipeline_structured, 자연어·단어형·캐릭터 선택은 두 파이프라인이 함께 쓴다.
 
 모든 함수는 thinking off, 낮은 temperature(변별 작업) 전제로 설계되었으나
 temperature 는 인자로 조절 가능하다. 자연어 생성만 약간 높은 temperature 권장.
@@ -257,25 +257,6 @@ async def _call_json_once(system, user, schema, name, temperature, seed, timeout
         raise LLMError(f"LLM JSON 파싱 실패: {e}; 앞부분={content[:200]!r}")
 
 
-def _extract_json_array(content: str) -> list[str]:
-    """응답에서 JSON 문자열 배열을 추출. 실패 시 빈 리스트.
-
-    모델이 JSON 배열을 출력한 뒤 평문 자기검토를 덧붙이는 경우가 있다(실측:
-    '[...] (Wait, X is not in the pool...)' 식). 그 검토문에도 대괄호가 섞이면
-    greedy 매칭이 첫 '['부터 뒤쪽 ']'까지 통째로 삼켜 파싱이 깨진다.
-    → 평면 배열 후보(중첩 대괄호 없음)들을 순서대로 찾아, 유효한 '문자열 배열'을
-      처음 만나는 즉시 반환한다(보통 맨 앞 진짜 답).
-    """
-    for cand in re.findall(r'\[[^\[\]]*\]', content, re.DOTALL):
-        try:
-            arr = json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(arr, list) and all(isinstance(x, str) for x in arr):
-            return arr
-    return []
-
-
 def _strip_markdown(text: str) -> str:
     """자연어 응답의 마크다운 코드블록/따옴표 제거."""
     text = re.sub(r'^```[\w]*\n?', '', text)
@@ -401,150 +382,6 @@ async def select_character_and_series(
     if series_tag not in series_set:
         series_tag = ""
     return char_tag, series_tag
-
-
-# ── 일반 모드 캐릭터 추출(2단계) ──────────────────────────────────
-# 일반 모드는 캐릭터명을 별도 필드로 받지 않으므로, 한 문장에서 (작품?, 캐릭터) 쌍을
-# 추출해 cat3/cat4 검색 후 일괄 판별한다. split 의 인물칸 입력을 LLM 추출로 대체한 것.
-SYSTEM_EXTRACT_PAIRS = """You extract character mentions from a Korean image-generation prompt.
-
-Find every specific, NAMED character a user wants drawn. For each, output the character name and (if the prompt mentions it) the series/work it belongs to.
-
-RULES:
-1. Only extract NAMED characters (a proper name like "라이덴 쇼군", "프리렌", "Hatsune Miku"). Do NOT extract generic people ("여자", "소녀", "a girl", "남자 둘") — those are not characters.
-2. series is OPTIONAL. Include it only if the prompt actually names the work (e.g. "원신", "장송의 프리렌"). If no work is mentioned, use an empty string.
-3. Keep names as the user wrote them (Korean or English), do not translate or normalize.
-4. If the prompt contains NO named character, return an empty array.
-
-Return ONLY a JSON array, no markdown:
-[{"character": "<name>", "series": "<series or empty>"}]
-Example input: "원신 라이덴 쇼군이랑 프리렌이 비 오는 거리에서"
-Example output: [{"character": "라이덴 쇼군", "series": "원신"}, {"character": "프리렌", "series": ""}]"""
-
-
-async def extract_character_pairs(
-    korean_prompt: str,
-    temperature: float = 0.0,
-) -> list[dict]:
-    """
-    [일반 모드 1단계] 한국어 프롬프트에서 (작품?, 캐릭터) 쌍 배열 추출.
-
-    Returns: [{"character": str, "series": str}, ...]  — 없으면 빈 배열.
-    빈 배열이면 호출측이 기존 4-step 만 태운다(오버헤드 최소).
-    """
-    if not korean_prompt.strip():
-        return []
-    try:
-        content = await _call(SYSTEM_EXTRACT_PAIRS, korean_prompt, temperature)
-    except LLMError:
-        return []
-    txt = _strip_markdown(content)
-    import json, re as _re
-    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
-    if not m:
-        return []
-    try:
-        arr = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return []
-    out = []
-    for item in arr if isinstance(arr, list) else []:
-        if not isinstance(item, dict):
-            continue
-        name = (item.get("character") or "").strip()
-        series = (item.get("series") or "").strip()
-        if name:
-            out.append({"character": name, "series": series})
-    return out
-
-
-SYSTEM_SELECT_PAIRS = """You select the correct Danbooru character tags for several character mentions at once.
-
-You are given a list of PAIRS. Each pair has:
-- the user's intended CHARACTER name (as typed),
-- the user's intended SERIES name (may be empty),
-- CHARACTER_CANDIDATES and SERIES_CANDIDATES retrieved from the DB for THAT pair (each with score and aliases).
-
-For EACH pair, pick the single best character tag from that pair's CHARACTER_CANDIDATES.
-
-RULES:
-1. Choose ONLY from that pair's provided candidates. Never invent a tag. If nothing fits, use empty string for that pair.
-2. The user's intent dominates the vector score. A lower-scored candidate that matches the user's stated name/series beats a higher-scored mismatch.
-3. If a SERIES is given for the pair, prefer the character candidate whose "name_(series)" matches that series.
-4. Disambiguate within the same series by the NAME the user typed (e.g. "프리렌"/"frieren" -> "frieren", NOT a side character like "linie_(sousou_no_frieren)").
-5. Match across languages and aliases (Korean vs English vs alias).
-6. If the user's character is clearly not among that pair's candidates, return "" for it (do not force a wrong pick).
-
-Return ONLY a JSON array, one object per input pair IN THE SAME ORDER, no markdown:
-[{"character": "<tag or empty>"}]"""
-
-
-async def select_character_pairs(
-    pairs: list[dict],
-    temperature: float = 0.0,
-) -> list[str]:
-    """
-    [일반 모드 2단계] 여러 (작품?, 캐릭터) 쌍을 한 번에 판별.
-
-    pairs 각 원소: {
-        "character": str, "series": str,
-        "char_candidates": [{"tag","score","aliases"}...],
-        "series_candidates": [{"tag","score","aliases"}...],
-    }
-    Returns: 입력 순서대로 character_tag 리스트(못 고르면 "").
-             작품 태그는 일반 모드에선 최종/NL 모두 미사용이므로 반환하지 않음.
-    """
-    if not pairs:
-        return []
-
-    def _fmt(cands: list[dict]) -> str:
-        lines = []
-        for c in (cands or []):
-            al = ", ".join((c.get("aliases") or [])[:6])
-            lines.append(
-                f'- {c["tag"]} (score={c.get("score", 0):.3f}'
-                + (f', aliases=[{al}]' if al else "")
-                + ")"
-            )
-        return "\n".join(lines) if lines else "(none)"
-
-    blocks = []
-    for i, p in enumerate(pairs):
-        blocks.append(
-            f'PAIR {i}:\n'
-            f'  CHARACTER name: "{p.get("character","")}"\n'
-            f'  SERIES name: "{p.get("series","")}"\n'
-            f'  CHARACTER_CANDIDATES:\n{_fmt(p.get("char_candidates"))}\n'
-            f'  SERIES_CANDIDATES:\n{_fmt(p.get("series_candidates"))}'
-        )
-    user = "\n\n".join(blocks)
-
-    try:
-        content = await _call(SYSTEM_SELECT_PAIRS, user, temperature)
-    except LLMError:
-        return ["" for _ in pairs]
-
-    txt = _strip_markdown(content)
-    import json, re as _re
-    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
-    if not m:
-        return ["" for _ in pairs]
-    try:
-        arr = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return ["" for _ in pairs]
-
-    out = []
-    for i, p in enumerate(pairs):
-        tag = ""
-        if isinstance(arr, list) and i < len(arr) and isinstance(arr[i], dict):
-            tag = (arr[i].get("character") or "").strip()
-        # 환각 방지: 해당 쌍 후보에 실제 존재하는 태그만
-        cand_set = {c["tag"] for c in (p.get("char_candidates") or [])}
-        if tag not in cand_set:
-            tag = ""
-        out.append(tag)
-    return out
 
 
 async def generate_nl_multi(

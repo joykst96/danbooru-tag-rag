@@ -127,7 +127,7 @@ def parse_row(tag: str, category: int, frequency: int, description: str) -> Pars
 # 임베딩 텍스트 생성
 # ---------------------------------------------------------------------------
 # "{영어 태그명(읽기형)} {한국어 정의} {한국어 별칭}". 정의·별칭이 없으면 태그명만.
-# (e5 시절 비교한 a/b/c 구성 중 a 구조. embeddinggemma-2 벤치에서도 이 구성이 가장 좋았다.)
+# (embeddinggemma-2 벤치에서 태그명을 뺀 구성·title 형식보다 좋았다.)
 # ---------------------------------------------------------------------------
 
 def build_embed_text(parsed: ParsedTag) -> str:

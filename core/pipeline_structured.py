@@ -1,5 +1,5 @@
 """
-structured 파이프라인 (기본 모드 본선, config.PIPELINE="structured")
+structured 파이프라인 (기본 모드 본선. 고급 모드의 묘사·배경 칸도 describe() 로 같은 흐름을 쓴다)
 (벤치 실험 이름: v3 → 속도판 v4. 이전 커밋에서는 파일명이 pipeline_v3.py 였다.)
 
 tag-embedding 벤치(gen_test/gemma_v3.py → 속도판 gemma_v4.py)에서 gemma4 26B A4B 로 최적화·측정한 흐름을 옮겼다.
@@ -21,20 +21,20 @@ tag-embedding 벤치(gen_test/gemma_v3.py → 속도판 gemma_v4.py)에서 gemma
      맞는 후보가 없으면 짧은 영어 구, 그것도 없으면 분해 때 받은 영어(en)를 구로 쓴다(조각을 버리지 않음).
   4. 최종 = 인원수 태그 + 캐릭터 태그(cat4) + 조각별 선택(태그·구).
      작품 태그(cat3)는 기존 정책대로 최종에서 뺀다. DB 실존 확인·_(cosplay) 제거는 기존과 같은 이중 방어.
-  5. 자연어: 기존 톤 기능(rich/plain/단어형+)을 그대로 쓴다 (pipeline_decomposed._generate_nl_or_phrase).
+  5. 자연어: 톤 기능(rich/plain/단어형+) (generate_nl_or_phrase).
 
-스트리밍 이벤트(stage: korean / english / final / nl)는 기존 stream_decomposed_pipeline 과 같은 모양이라
+스트리밍 이벤트(stage: korean / english / final / nl)는 이전 4회 분해 파이프라인(삭제됨)과 같은 모양이라
 api.py·index.html 은 그대로 동작한다. final_tags 에는 태그 외에 영어 구가 섞일 수 있다(쉼표 제거).
 """
 
 import logging
 
+from . import llm
 from . import search as search_mod
 from .config import MAIN_VARIANT, LLM_SEED
 from .exceptions import LLMError
 from .llm import _call_json
 from .llm_structured import SYSTEM_DECOMPOSE, SCHEMA_DECOMPOSE, SYSTEM_SELECT
-from .pipeline_decomposed import _generate_nl_or_phrase
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +130,102 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
     return picks, notes
 
 
+async def decompose(text: str) -> dict:
+    """구조화 분해 1회 (JSON 스키마 강제)."""
+    return await _call_json(SYSTEM_DECOMPOSE, text, SCHEMA_DECOMPOSE, "decompose", seed=LLM_SEED)
+
+
+def assemble(picks: list[list[str]], all_cands: list[list[dict]], n_chars: int,
+             variant: str) -> tuple[list[str], list[str], list[str]]:
+    """
+    선택 결과 → (캐릭터 태그, 본문 토큰, DB 밖이라 지운 태그). 앞의 n_chars 개 조각이 캐릭터 조각.
+    캐릭터 조각은 cat4 태그만 남긴다(작품 cat3 은 최종에서 제외, 기존 정책).
+    본문은 태그와 영어 구(쉼표 제거)가 섞이며, DB 실존 확인과 _(cosplay) 등 파생 태그 제거를 거친다.
+    """
+    tag_cat = {h["tag"]: h["category"] for cs in all_cands for h in cs}
+    char_tags, body = [], []
+    for i, ps in enumerate(picks):
+        for p in ps:
+            if p.startswith("phrase:"):
+                t = _phrase_text(p)
+                if t:
+                    body.append(t)
+            elif i < n_chars:
+                if tag_cat.get(p) == 4 and p not in char_tags:
+                    char_tags.append(p)
+            else:
+                body.append(p)
+    db_tags = [t for t in body if t in tag_cat]
+    _, dropped_db = search_mod.filter_existing_tags(db_tags, variant)
+    dropped = set(dropped_db)
+    body = [t for t in body if t not in dropped]
+    body = search_mod.drop_character_derived(body)
+    return char_tags, body, list(dropped_db)
+
+
+async def describe(text: str, variant: str = MAIN_VARIANT, strip_names: list[str] | None = None) -> dict:
+    """
+    고급 모드의 묘사·배경 칸용: 분해 → 일반(cat0) 조각만 검색·선택 → 본문 토큰.
+    분해의 characters 는 버린다(고급 모드는 캐릭터를 이름 칸으로 따로 찾는다).
+    strip_names: 조각의 한국어 표기에서 이 이름들을 지운다(지우고 비면 조각을 버림) —
+                 이름이 cat0 검색을 타면 'name_(cosplay)' 같은 파생 태그가 잡히기 때문.
+    반환: {"tags": 본문 토큰, "hallucinated": DB 밖 태그, "people": {"girls","boys","others"}}
+    """
+    empty = {"tags": [], "hallucinated": [], "people": {"girls": 0, "boys": 0, "others": 0}}
+    if not text.strip():
+        return empty
+    dec = await decompose(text)
+    units = []
+    for u in to_units(dec.get("units")):
+        ko = search_mod.strip_names_from_text(u["ko"], strip_names).strip() if strip_names else u["ko"]
+        if ko:
+            units.append({"ko": " ".join(ko.split()), "en": u["en"]})
+    people = {k: int(dec.get(k, 0) or 0) for k in ("girls", "boys", "others")}
+    if not units:
+        return {**empty, "people": people}
+    cands = all_candidates(units, [set(search_mod.GENERAL_CATS)] * len(units), variant)
+    picks, notes = await select(text, units, cands, variant)
+    if notes:
+        logger.info(f"structured(묘사) 선택 메모: {notes}")
+    _, body, dropped = assemble(picks, cands, 0, variant)
+    return {"tags": list(dict.fromkeys(body)), "hallucinated": dropped, "people": people}
+
+
+async def generate_nl_or_phrase(
+    korean_prompt: str,
+    kept: list[str],
+    en_units: list[str],
+    nl_tone: str | None,
+    variant: str,
+    char_tags: list[str] | None = None,
+) -> str:
+    """
+    자연어 단계 출력 분기: 일반 톤이면 자연어 문장, "phrase"면 단어형 보조출력.
+
+    단어형(UI '단어형+')은 확정 태그(kept)가 표현 못 한 잔차만 짧은 영어 구로 낸다.
+    중복 배제 기준이 kept 이므로 kept 를 그대로 넘기고, 태그의 의미 범위(definition)를
+    배제맥락으로 함께 준다.
+
+    톤별 입력(NL 의 목적은 'tag 수렴 과정에서 잘려나간 손실 복구'):
+      - rich  : kept(최종 태그) 기반. 정합성 우선, 묘사적.
+      - plain : en_units(DB 통과 전 영어 분해단위) 기반. kept 를 받으면 손실된 결과를
+                받아 손실을 복구하라는 모순이 되므로, 수렴 전 정보를 입력으로 준다.
+                캐릭터 정체성은 char_tags 를 앞에 보존해 SYSTEM_NL RULE2 의 'X from Y' 오프닝을 살린다.
+                en_units 가 비면 kept 로 폴백.
+    """
+    if nl_tone == "phrase":
+        defs = search_mod.get_definitions(variant)
+        return await llm.generate_phrase(korean_prompt, kept, defs=defs)
+    if nl_tone == "plain":
+        basis = en_units or kept
+        if char_tags:
+            basis = char_tags + [t for t in basis if t not in char_tags]
+        return await llm.generate_nl_prompt(korean_prompt, basis, tone=nl_tone)
+    # rich(및 기타): 최종 태그 기반. 태그가 비면 영어 분해단위로 폴백.
+    nl_basis = kept or en_units
+    return await llm.generate_nl_prompt(korean_prompt, nl_basis, tone=nl_tone)
+
+
 def _phrase_text(p: str) -> str:
     """구 → 최종 프롬프트 토큰. UI 가 ', ' 로 태그를 나누므로 쉼표는 지운다."""
     return " ".join(p[len("phrase:"):].replace(",", " ").split())
@@ -142,11 +238,11 @@ async def stream_structured_pipeline(
     search_categories: set[int] | None = None,
     nl_tone: str | None = None,
 ):
-    """structured 를 단계별로 스트리밍. yield 형식은 stream_decomposed_pipeline 과 같다."""
+    """structured 를 단계별로 스트리밍. yield {"stage": korean|english|final|nl, "status": 표시 문구, "data": dict}."""
     unit_cats = set(search_categories) if search_categories else set(search_mod.GENERAL_CATS)
 
     # ── 1. 구조화 분해 ──
-    dec = await _call_json(SYSTEM_DECOMPOSE, korean_prompt, SCHEMA_DECOMPOSE, "decompose", seed=LLM_SEED)
+    dec = await decompose(korean_prompt)
     chars = to_units(dec.get("characters"))
     units = to_units(dec.get("units"))
     count = count_tags(dec)
@@ -167,31 +263,14 @@ async def stream_structured_pipeline(
         logger.info(f"structured 선택 메모: {notes}")
 
     # ── 4. 최종 조립 + 이중 방어 ──
-    tag_cat = {h["tag"]: h["category"] for cs in all_cands for h in cs}
-    char_tags, body = [], []
-    for i, ps in enumerate(picks):
-        for p in ps:
-            if p.startswith("phrase:"):
-                t = _phrase_text(p)
-                if t:
-                    body.append(t)
-            elif i < len(chars):
-                if tag_cat.get(p) == 4 and p not in char_tags:   # 작품(cat3)은 최종에서 제외(기존 정책)
-                    char_tags.append(p)
-            else:
-                body.append(p)
-    db_tags = [t for t in body if t in tag_cat]
-    kept_db, dropped_db = search_mod.filter_existing_tags(db_tags, variant)
-    dropped = set(dropped_db)
-    body = [t for t in body if t not in dropped]
-    body = search_mod.drop_character_derived(body)
+    char_tags, body, dropped_db = assemble(picks, all_cands, len(chars), variant)
     final = list(dict.fromkeys(count + char_tags + body))
     yield {"stage": "final", "status": "태그 완성", "data": {"final_tags": final, "hallucinated": list(dropped_db)}}
 
     # ── 5. 자연어 (기존 톤 기능 그대로) ──
     nl_prompt = ""
     if generate_nl:
-        nl_prompt = await _generate_nl_or_phrase(korean_prompt, final, en_units, nl_tone, variant, char_tags=char_tags)
+        nl_prompt = await generate_nl_or_phrase(korean_prompt, final, en_units, nl_tone, variant, char_tags=char_tags)
     yield {"stage": "nl", "status": "완료", "data": {"nl_prompt": nl_prompt}}
 
 
