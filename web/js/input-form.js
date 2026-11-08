@@ -34,13 +34,13 @@ export function getSearchPoolCategories() {
 export function setMode(mode) {
   state.mode = mode;
   const isSplit = mode === "split";
-  $("basic_input").style.display = isSplit ? "none" : "block";
-  $("split_input").style.display = isSplit ? "block" : "none";
+  $("basic_input").hidden = isSplit;
+  $("split_input").hidden = !isSplit;
   $("mode_basic_btn").classList.toggle("active", !isSplit);
   $("mode_split_btn").classList.toggle("active", isSplit);
   // 검색 범위는 기본 모드 전용(고급 모드는 백엔드가 4-step 본선/cat3·4 검색 사용).
   const srs = $("search_range_section");
-  if (srs) srs.style.display = isSplit ? "none" : "block";
+  if (srs) srs.hidden = isSplit;
   // 고급 모드 첫 진입 시 인물칸 1개 자동 생성
   if (isSplit && document.querySelectorAll("#char_blocks .char-block").length === 0) {
     addCharBlock();
@@ -64,7 +64,7 @@ export function addCharBlock() {
       <button type="button" class="src-btn" data-src="passthrough">DB에 없는 캐릭터</button>
       <button type="button" class="src-btn" data-src="original">오리지널</button>
     </div>
-    <p class="src-hint" style="font-size:11px; color:var(--dim); margin:6px 0 12px; line-height:1.5;">DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.</p>
+    <p class="src-hint help">DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.</p>
     <div class="cb-row">
       <div class="cb-field">
         <label class="cb-label">작품명 (옵션)</label>
@@ -103,16 +103,14 @@ function setCharSource(btn, src) {
   if (hint) hint.textContent = SRC_HINT[src] || "";
   const series = block.querySelector(".cb-series");
   const name = block.querySelector(".cb-name");
-  // 오리지널: 작품/캐릭터명 비활성+비움(이름 자동 생성). db/passthrough: 입력 살림.
+  // 오리지널: 작품/캐릭터명 비활성+비움(이름 자동 생성, 흐림은 CSS :disabled). db/passthrough: 입력 살림.
   const lock = src === "original";
   [series, name].forEach((el) => {
     el.disabled = lock;
     if (lock) el.value = "";
-    el.style.opacity = lock ? "0.4" : "1";
   });
   // passthrough 는 시각적으로 점선 표시(DB 미경유 신규).
-  block.style.outline = src === "passthrough" ? "1px dashed var(--accent)" : "";
-  block.style.outlineOffset = src === "passthrough" ? "2px" : "";
+  block.classList.toggle("is-passthrough", src === "passthrough");
 }
 
 function removeCharBlock(n) {

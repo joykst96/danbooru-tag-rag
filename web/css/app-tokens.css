@@ -1,0 +1,139 @@
+/* ==========================================================================
+   앱 3층 · 이 화면의 컴포넌트 토큰
+   --------------------------------------------------------------------------
+   tokens.css(디자인 토큰 번들) 위에 이 앱에만 있는 컴포넌트의 "결정"을 이름으로 고정한다.
+   나머지 앱 CSS(layout·controls·results)는 2층 역할 토큰, 3층 컴포넌트 토큰, 그리고 이 파일의 토큰만 쓴다.
+   1층(스케일·팔레트)을 참조하는 곳은 이 파일뿐이다. 날 값(hex·px·ms)은 쓰지 않는다.
+   ========================================================================== */
+
+:root,
+[data-density] {
+  /* ---------------- 태그 종류 → 라벨 색 ----------------
+     Danbooru 카테고리 번호(0 일반·1 작가·3 작품·4 캐릭터·5 메타)는 뜻 없는 분류라 라벨 색을 쓴다.
+     고정(금색)·패스스루(청록)는 라벨 5색에 없어서 여기서 만든다:
+       고정      = 호박 팔레트(경고 의도와 같은 원시값이지만 뜻은 "분류")
+       패스스루  = 파랑·초록 라벨을 OKLCH로 반씩 섞은 색을 전경색 쪽으로 --mix-hover 만큼 더 섞음
+                   (새 hex 없이 파생. 반반 섞기만 하면 라이트 페이지 배경 위 4.41:1로 미달 → 5.02:1)
+     실측 대비(브라우저, 옅은 배경 칩 위 글자): 다크 5.86~9.17, 라이트 4.66~5.93 — 모두 4.5:1 이상. */
+  --tag-general: var(--color-label-blue);
+  --tag-artist: var(--color-label-red);
+  --tag-copyright: var(--color-label-purple);
+  --tag-character: var(--color-label-green);
+  --tag-meta: var(--color-label-orange);
+  --tag-fixed: light-dark(var(--amber-52), var(--amber-78));
+  --tag-passthrough: color-mix(
+    in oklab,
+    color-mix(in oklch, var(--color-label-blue), var(--color-label-green)),
+    var(--color-fg) var(--mix-hover)
+  );
+  /* 종류 색 칩: 옅은 배경 + 옅은 테두리 + 진한 글자.
+     배경을 --alpha-subtle(14%)로 하면 라이트에서 라벨 글자 대비가 4.0~4.5로 떨어져 --alpha-faint(8%)로 둔다. */
+  --tag-tint-bg: var(--alpha-faint);
+  --tag-tint-border: var(--alpha-medium);
+
+  /* ---------------- 태그 칩 (결과·키워드·뱃지) ---------------- */
+  --tag-font: var(--font-weight-regular) var(--font-size-sm) / var(--line-height-none) var(--font-family-sans);
+  --tag-padding-y: var(--chip-padding-y);
+  --tag-padding-x: var(--chip-padding-x);
+  --tag-radius: var(--chip-radius);
+  --tag-gap: var(--gap-sm);              /* 칩 ↔ 칩 */
+  --tag-weighted-ring: var(--border-width-thin);
+
+  /* 인물 카드 안의 작은 태그 */
+  --mini-tag-font: var(--font-caption);
+  --mini-tag-padding-y: var(--space-px);
+  --mini-tag-padding-x: var(--space-1_5);
+  --mini-tag-radius: var(--radius-sm);
+
+  --tag-weighted-weight: var(--font-weight-semibold);
+
+  /* ---------------- 글자 묶음 (2층 역할에 없는 조합) ---------------- */
+  --control-md-font: var(--font-weight-semibold) var(--font-size-md) / var(--line-height-none) var(--font-family-sans);
+  --heading-sm-font: var(--font-weight-semibold) var(--font-size-md) / var(--line-height-normal) var(--font-family-sans);
+  --card-title-font: var(--font-weight-semibold) var(--font-size-md) / var(--line-height-snug) var(--font-family-sans);
+  --prose-font: var(--font-weight-regular) var(--font-size-md) / var(--line-height-relaxed) var(--font-family-sans);
+  --dialog-icon-font: var(--font-weight-regular) var(--font-size-4xl) / var(--line-height-none) var(--font-family-sans);
+  --label-strong-font: var(--font-weight-semibold) var(--font-size-sm) / var(--line-height-normal) var(--font-family-sans);
+  --code-inline-font: var(--font-weight-regular) var(--font-size-md) / var(--line-height-normal) var(--font-family-mono);
+  --ac-tag-font: var(--font-weight-regular) var(--font-size-base) / var(--line-height-tight) var(--font-family-mono);
+
+  /* ---------------- 세그먼트 (여러 버튼 중 하나 선택) ---------------- */
+  --segment-bg: var(--color-bg-sunken);
+  --segment-border: var(--color-border);
+  --segment-radius: var(--radius-lg);
+  --segment-padding: var(--space-0_5);
+  --segment-gap: var(--space-0_5);
+  --segment-item-radius: var(--radius-md);
+  --segment-item-padding-y: var(--space-1_5);
+  --segment-item-padding-x: var(--space-2_5);
+  --segment-item-fg: var(--color-fg-muted);
+  --segment-item-fg-hover: var(--color-fg);
+  --segment-item-bg-active: var(--color-accent-solid);
+  --segment-item-fg-active: var(--color-on-accent);
+  /* 작은 세그먼트(라벨 줄 안: 가중치 표기·고정태그 위치) */
+  --segment-sm-radius: var(--radius-md);
+  --segment-sm-item-radius: var(--radius-sm);
+  --segment-sm-item-padding-y: var(--space-1);
+  --segment-sm-item-padding-x: var(--space-2_5);
+  --segment-sm-font: var(--badge-font);
+
+  /* ---------------- 스위치 토글 ---------------- */
+  --switch-knob-size: var(--space-4);
+  --switch-inset: var(--space-0_5);
+  --switch-track-off: var(--color-border-strong);
+  --switch-track-on: var(--color-accent-solid);
+  --switch-knob: var(--gray-100); /* 두 테마 모두 흰 손잡이 */
+  --switch-radius: var(--radius-pill);
+  --switch-knob-radius: var(--radius-full);
+  --switch-transition: background var(--transition-base), transform var(--transition-base);
+
+  /* ---------------- 슬라이더 ---------------- */
+  --slider-track-height: var(--progress-height);
+  --slider-track-bg: var(--progress-track);
+  --slider-thumb-size: var(--space-4);
+  --slider-thumb-bg: var(--color-accent-solid);
+  --slider-thumb-radius: var(--radius-full);
+
+  /* ---------------- 스피너 (글자색 = currentColor 를 따른다) ---------------- */
+  --spinner-size: var(--space-4);
+  --spinner-width: var(--border-width-thick);
+  --spinner-radius: var(--radius-full);
+  --spinner-track-alpha: var(--alpha-medium);
+  --spinner-duration: calc(var(--duration-slow) * 3);
+
+  /* ---------------- 결과 상자 복사 버튼 ---------------- */
+  --copy-button-radius: var(--radius-pill);
+
+  /* ---------------- 중첩 카드 (인물칸·인물 카드·접이식 설정) ---------------- */
+  --card-bg: var(--color-bg);
+  --card-border: var(--color-border);
+  --card-radius: var(--radius-lg);
+  --card-padding: var(--inset-md);
+
+  /* ---------------- 작은 아이콘 버튼 (인물칸·작가 행 ×) ---------------- */
+  --icon-button-sm-size: var(--space-6);
+  --icon-button-sm-font: var(--font-weight-regular) var(--font-size-lg) / var(--line-height-none) var(--font-family-sans);
+
+  /* ---------------- 툴팁 ---------------- */
+  --tooltip-bg: var(--popover-bg);
+  --tooltip-border: var(--popover-border);
+  --tooltip-fg: var(--color-fg);
+  --tooltip-font: var(--font-weight-regular) var(--font-size-sm) / var(--line-height-snug) var(--font-family-sans);
+  --tooltip-padding-y: var(--space-2);
+  --tooltip-padding-x: var(--space-3);
+  --tooltip-radius: var(--radius-md);
+  --tooltip-shadow: var(--shadow-sm);
+
+  /* ---------------- 자연어 프롬프트 상자 ---------------- */
+  --nl-prompt-min-height: var(--space-6);
+
+  /* ---------------- 자동완성 항목 ---------------- */
+  --ac-item-radius: var(--radius-sm);
+  --ac-mark-bg: var(--color-accent-subtle-hover);
+  --ac-mark-radius: var(--radius-xs);
+
+  /* ---------------- 레이어 ---------------- */
+  --layer-dropdown: var(--z-dropdown);
+  --layer-modal: var(--z-modal);
+  --layer-tooltip: var(--z-toast);
+}

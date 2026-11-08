@@ -4,117 +4,114 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Danbooru Prompt Helper</title>
-    <link rel="stylesheet" href="/web/css/app.css" />
+    <!-- tokens.css(bundle.mjs 생성)·base.css(복사)는 design-tokens 저장소 파일 그대로 — 직접 고치지 않는다.
+         이 앱의 결정은 app-tokens.css(앱 3층)에, 화면 스타일은 layout·controls·results.css 에 있다. -->
+    <link rel="stylesheet" href="/web/css/tokens.css" />
+    <link rel="stylesheet" href="/web/css/base.css" />
+    <link rel="stylesheet" href="/web/css/app-tokens.css" />
+    <link rel="stylesheet" href="/web/css/layout.css" />
+    <link rel="stylesheet" href="/web/css/controls.css" />
+    <link rel="stylesheet" href="/web/css/results.css" />
     <script type="module" src="/web/js/main.js"></script>
   </head>
   <body>
     <div class="wrap">
-      <div class="header">
+      <header class="header">
         <h1>Danbooru Prompt Helper</h1>
         <p class="subtitle">
           입력하신 한국어 묘사를 바탕으로 가장 적합한 Danbooru 태그와 자연어 프롬프트를 생성합니다.
         </p>
-        <div style="margin-top: 16px; margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; cursor: default;">
-          <span class="tag tag-cat-0" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">일반태그</span>
-          <span class="tag tag-cat-1" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작가태그</span>
-          <span class="tag tag-cat-3" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작품태그</span>
-          <span class="tag tag-cat-4" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">캐릭터</span>
-          <span class="tag fixed-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">고정태그</span>
-          <span class="tag passthrough-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">패스스루</span>
-          <span class="tag tag-cat-5" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">메타태그</span>
+        <div class="legend">
+          <span class="tag tag-cat-0">일반태그</span>
+          <span class="tag tag-cat-1">작가태그</span>
+          <span class="tag tag-cat-3">작품태그</span>
+          <span class="tag tag-cat-4">캐릭터</span>
+          <span class="tag fixed-badge">고정태그</span>
+          <span class="tag passthrough-badge">패스스루</span>
+          <span class="tag tag-cat-5">메타태그</span>
         </div>
-      </div>
+      </header>
 
       <div class="main-grid">
         <!-- 왼쪽 패널: 입력부 -->
-        <div class="panel">
-          <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">LLM 태그 생성 (권장)</h3>
-          <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 16px; line-height: 1.4;">
-            한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.
-          </p>
-          <div class="form-group" style="margin-top: 8px;">
-            <!-- 1. 모드 토글: 기본 / 고급(인물 분할) -->
-            <div id="mode_toggle" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" id="mode_basic_btn" class="mode-btn active">기본</button>
-              <button type="button" id="mode_split_btn" class="mode-btn">고급 (인물 분할)</button>
+        <div class="panel input-panel">
+          <div class="section-head">
+            <h2 class="section-title">LLM 태그 생성 (권장)</h2>
+            <p class="help">한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.</p>
+          </div>
+
+          <!-- 1. 모드 토글: 기본 / 고급(인물 분할) -->
+          <div id="mode_toggle" class="toggle-row">
+            <button type="button" id="mode_basic_btn" class="mode-btn active">기본</button>
+            <button type="button" id="mode_split_btn" class="mode-btn">고급 (인물 분할)</button>
+          </div>
+
+          <!-- 2. 입력칸 (최상단) -->
+          <div id="basic_input" class="field">
+            <label for="prompt">이미지 묘사 (한국어)</label>
+            <textarea
+              id="prompt"
+              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
+            ></textarea>
+          </div>
+
+          <div id="split_input" class="stack" hidden>
+            <p class="help-lead">
+              인물마다 칸을 나눠 입력합니다.<br />
+              다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
+              <span class="text-soft">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
+            </p>
+            <div id="char_blocks" class="stack"></div>
+            <button type="button" class="add-char-btn" id="add_char_btn">+ 인물 추가</button>
+            <div class="char-block char-block-bg field">
+              <label class="cb-label" for="bg_desc">배경 / 공통 요소 (한국어)</label>
+              <textarea id="bg_desc" class="cb-textarea" rows="2"
+                placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
             </div>
+          </div>
 
-            <!-- 2. 입력칸 (최상단) -->
-            <div id="basic_input">
-              <label for="prompt">이미지 묘사 (한국어)</label>
-              <textarea
-                id="prompt"
-                placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
-              ></textarea>
-            </div>
-
-            <div id="split_input" style="display:none;">
-              <p style="font-size:12px; color:var(--dim); margin:0 0 14px; line-height:1.7;">
-                인물마다 칸을 나눠 입력합니다.<br />
-                다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
-                <span style="opacity:0.8;">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
-              </p>
-              <div id="char_blocks"></div>
-              <button type="button" class="add-char-btn" id="add_char_btn">+ 인물 추가</button>
-
-              <div class="char-block" style="margin-top:16px; border-color:var(--accent);">
-                <label class="cb-label">배경 / 공통 요소 (한국어)</label>
-                <textarea id="bg_desc" class="cb-textarea" rows="2"
-                  placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
-              </div>
-            </div>
-
-            <!-- 3. 자연어 톤 (전면 노출) -->
-            <label style="margin-top: 20px; display:block;">자연어 톤</label>
-            <div class="tone-group" id="nl_tone_group">
+          <!-- 3. 자연어 톤 (전면 노출) -->
+          <div class="field">
+            <span class="field-label">자연어 톤</span>
+            <div class="chip-group" id="nl_tone_group">
               <button type="button" class="tone-btn active" data-tone="rich" data-temp="0.4">묘사적</button>
               <button type="button" class="tone-btn" data-tone="plain" data-temp="0.35">담백</button>
               <button type="button" class="tone-btn" data-tone="phrase" data-temp="0.25">단어형+</button>
             </div>
+          </div>
 
-            <!-- 4. 태그 검색 범위 (기본 모드 전용 — 고급 모드는 4-step 본선/cat3·4 검색 사용) -->
-            <div id="search_range_section">
-              <label style="margin-top: 20px; display:block;">태그 검색 범위</label>
-              <div id="search_pool_categories" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
-                <button type="button" class="cat-toggle active" data-pool="0">일반</button>
-                <button type="button" class="cat-toggle" data-pool="1">작가</button>
-                <button type="button" class="cat-toggle" data-pool="3">작품</button>
-                <button type="button" class="cat-toggle" data-pool="4">캐릭터</button>
-                <button type="button" class="cat-toggle" data-pool="5">메타</button>
-              </div>
-              <p style="font-size: 11px; color: var(--warn); margin-top: 4px; line-height: 1.4;">
-                ※ 어느 종류의 태그를 검색할지 고릅니다. 일반 외 카테고리를 넣으면 출력 태그 품질이 떨어질 수 있습니다.
-              </p>
+          <!-- 4. 태그 검색 범위 (기본 모드 전용 — 고급 모드는 4-step 본선/cat3·4 검색 사용) -->
+          <div id="search_range_section" class="field">
+            <span class="field-label">태그 검색 범위</span>
+            <div id="search_pool_categories" class="chip-group">
+              <button type="button" class="cat-toggle active" data-pool="0">일반</button>
+              <button type="button" class="cat-toggle" data-pool="1">작가</button>
+              <button type="button" class="cat-toggle" data-pool="3">작품</button>
+              <button type="button" class="cat-toggle" data-pool="4">캐릭터</button>
+              <button type="button" class="cat-toggle" data-pool="5">메타</button>
             </div>
+            <p class="help text-warning">
+              ※ 어느 종류의 태그를 검색할지 고릅니다. 일반 외 카테고리를 넣으면 출력 태그 품질이 떨어질 수 있습니다.
+            </p>
+          </div>
 
-            <!-- 5. 출력 형식 옵션 -->
-            <div class="checkbox-container" style="margin-top:16px;">
-              <input
-                type="checkbox"
-                class="switch"
-                id="replace_underscores"
-              />
-              <label for="replace_underscores"
-                >언더스코어(_)를 공백으로 치환</label
-              >
+          <!-- 5. 출력 형식 옵션 -->
+          <div class="option-list">
+            <div class="checkbox-container">
+              <input type="checkbox" class="switch" id="replace_underscores" />
+              <label for="replace_underscores">언더스코어(_)를 공백으로 치환</label>
             </div>
             <div class="checkbox-container">
-              <input
-                type="checkbox"
-                class="switch"
-                id="escape_parentheses"
-              />
-              <label for="escape_parentheses"
-                >소괄호 '()' 이스케이프 '\(\)' 처리</label
-              >
+              <input type="checkbox" class="switch" id="escape_parentheses" />
+              <label for="escape_parentheses">소괄호 '()' 이스케이프 '\(\)' 처리</label>
             </div>
-            <div class="checkbox-container" style="align-items:center; gap:10px;">
-              <label style="font-size:13px;">가중치 표기</label>
-              <span class="seg" id="weight_syntax_group" style="margin-top:0;">
+            <div class="checkbox-container">
+              <span class="option-label">가중치 표기</span>
+              <span class="seg" id="weight_syntax_group">
                 <button type="button" class="seg-btn active" data-syntax="local">로컬</button>
                 <button type="button" class="seg-btn" data-syntax="nai">NAI</button>
               </span>
-              <span style="font-size:11px; color:var(--dim);">로컬 <code>(tag:1.2)</code> · NAI <code>1.2::tag::</code></span>
+              <span class="help">로컬 <code>(tag:1.2)</code> · NAI <code>1.2::tag::</code></span>
             </div>
           </div>
 
@@ -122,12 +119,12 @@
           <details class="advanced-settings">
             <summary>고정 태그 (Danbooru 태그 앞뒤 고정)</summary>
             <div class="settings-content">
-              <p style="font-size:12px; color:var(--dim); margin:0 0 12px; line-height:1.6;">
+              <p class="help-lead">
                 LLM·DB를 거치지 않고 결과 태그 앞(퀄리티)·뒤(작가)에 그대로 붙습니다.<br />
                 쉼표로 구분해 여러 개 입력할 수 있습니다.<br />
-                <span style="color:var(--warn);">※ 고정 태그는 언더스코어 치환·괄호 이스케이프가 적용되지 않고 입력 그대로 출력됩니다.</span>
+                <span class="text-warning">※ 고정 태그는 언더스코어 치환·괄호 이스케이프가 적용되지 않고 입력 그대로 출력됩니다.</span>
               </p>
-              <div style="margin-bottom: 16px;">
+              <div class="fixed-group">
                 <div class="fixed-head">
                   <span class="ft-title">퀄리티 태그</span>
                   <span class="ft-ctl-label">위치</span>
@@ -138,9 +135,9 @@
                 </div>
                 <input type="text" id="fixed_quality" class="cb-input"
                   placeholder="예: masterpiece, best quality, amazing quality" />
-                <div class="tag-list" id="quality_badges" style="margin-top:8px;"></div>
+                <div class="tag-list" id="quality_badges"></div>
               </div>
-              <div style="margin-bottom: 14px;">
+              <div class="fixed-group">
                 <div class="fixed-head">
                   <span class="ft-title">작가 태그</span>
                   <span class="ft-ctl-label">위치</span>
@@ -155,10 +152,10 @@
                     <button type="button" class="seg-btn" data-prefix="artist:">artist:</button>
                   </span>
                 </div>
-                <div id="artist_rows"></div>
-                <button type="button" class="add-char-btn" id="add_artist_btn" style="margin-top:8px;">+ 작가 추가</button>
+                <div id="artist_rows" class="stack-sm"></div>
+                <button type="button" class="add-char-btn" id="add_artist_btn">+ 작가 추가</button>
               </div>
-              <div class="fixed-head" style="margin-bottom:0;">
+              <div class="fixed-head">
                 <span class="ft-ctl-label">두 태그가 같은 위치일 때 순서</span>
                 <span class="seg" id="fixed_priority_group">
                   <button type="button" class="seg-btn active" data-priority="quality">퀄리티 먼저</button>
@@ -171,7 +168,7 @@
           <details class="advanced-settings">
             <summary>온도 미세조정 (고급)</summary>
             <div class="settings-content">
-              <div class="form-group">
+              <div class="field">
                 <label for="threshold">검색 유사도 기준 (Threshold)</label>
                 <div class="slider-group">
                   <input type="range" id="threshold" min="0.5" max="1.0" step="0.01" value="0.80" />
@@ -179,96 +176,96 @@
                 </div>
               </div>
 
-              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
+              <hr class="divider" />
 
-              <div style="margin-bottom: -4px;">
-                <h4 style="margin: 0 0 4px 0; font-size: 13px; color: var(--text);">온도 (Temperature) 설정</h4>
-                <p style="font-size: 11px; color: var(--dim); margin: 0; line-height: 1.4;">
+              <div class="section-head">
+                <h3 class="sub-title">온도 (Temperature) 설정</h3>
+                <p class="help">
                   낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
                   (너무 높으면 미친 소리를 하기 시작합니다.)
                 </p>
               </div>
 
-              <div class="form-group">
+              <div class="field">
                 <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
                 <div class="slider-group">
                   <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
                   <span class="val-display" id="kw_temp_val">0.1</span>
                 </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
-                  <span style="color: #ff6b6b;"><b>※ 전처리기는 0.1을 강력히 추천합니다.</b></span><br/>
+                <p class="help">
+                  <b class="text-danger">※ 전처리기는 0.1을 강력히 추천합니다.</b><br/>
                   온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
                 </p>
               </div>
 
-              <div class="form-group">
+              <div class="field">
                 <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
                 <div class="slider-group">
                   <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
                   <span class="val-display" id="nl_temp_val">0.4</span>
                 </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                <p class="help">
                   자연어 프롬프트를 얼마나 창의적이고 다채롭게 묘사할지 결정합니다.<br/>
                   낮추면 딱딱해지고 높이면 풍부해지지만, 과하면 묘사가 엇나갈 수 있습니다.<br/>
-                  <span style="opacity:0.8;">위에서 톤을 고르면 이 값이 권장값으로 맞춰집니다.</span>
+                  <span class="text-soft">위에서 톤을 고르면 이 값이 권장값으로 맞춰집니다.</span>
                 </p>
               </div>
             </div>
           </details>
 
-          <button
-            class="btn-generate"
-            id="generate_btn"
-          >
+          <button type="button" class="btn-generate" id="generate_btn">
             <span>태그 생성하기</span>
-            <div class="spinner" id="spinner"></div>
+            <div class="spinner" id="spinner" hidden></div>
           </button>
 
-          <div class="error-msg" id="error_msg"></div>
-          
-          <hr style="border: 0; border-top: 1px solid var(--border); margin: 32px 0 24px 0;" />
-          
-          <div class="form-group">
-            <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">벡터DB 단일태그 직접조회</h3>
-            <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 12px; line-height: 1.4;">
-              LLM 전처리를 거치지 않고 입력한 단일 단어 그대로 벡터 DB를 검색하여 유사한 태그를 찾습니다.
-            </p>
+          <div class="error-msg" id="error_msg" hidden></div>
+
+          <hr class="divider divider-section" />
+
+          <!-- 벡터DB 단일태그 직접조회 -->
+          <section class="direct-section">
+            <div class="section-head">
+              <h2 class="section-title">벡터DB 단일태그 직접조회</h2>
+              <p class="help">LLM 전처리를 거치지 않고 입력한 단일 단어 그대로 벡터 DB를 검색하여 유사한 태그를 찾습니다.</p>
+            </div>
             <input type="text" id="direct_query" placeholder="조회할 단어를 입력하세요 (예: 1girl)" />
-            
-            <label for="direct_threshold">유사도 임계값 - 권장: 0.60</label>
-            <div class="slider-group" style="margin-bottom: 16px;">
-              <input type="range" id="direct_threshold" min="0.3" max="1.0" step="0.01" value="0.60" />
-              <span class="val-display" id="direct_threshold_val">0.60</span>
+
+            <div class="field">
+              <label for="direct_threshold">유사도 임계값 - 권장: 0.60</label>
+              <div class="slider-group">
+                <input type="range" id="direct_threshold" min="0.3" max="1.0" step="0.01" value="0.60" />
+                <span class="val-display" id="direct_threshold_val">0.60</span>
+              </div>
             </div>
 
-            <label class="cb-label" style="margin-bottom:6px;">카테고리 (중복 선택 가능 · 미선택 = 전체)</label>
-            <div id="direct_categories" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
-              <button type="button" class="cat-toggle" data-cat="0">일반</button>
-              <button type="button" class="cat-toggle" data-cat="1">작가</button>
-              <button type="button" class="cat-toggle" data-cat="3">작품</button>
-              <button type="button" class="cat-toggle" data-cat="4">캐릭터</button>
-              <button type="button" class="cat-toggle" data-cat="5">메타</button>
+            <div class="field">
+              <span class="cb-label">카테고리 (중복 선택 가능 · 미선택 = 전체)</span>
+              <div id="direct_categories" class="chip-group">
+                <button type="button" class="cat-toggle" data-cat="0">일반</button>
+                <button type="button" class="cat-toggle" data-cat="1">작가</button>
+                <button type="button" class="cat-toggle" data-cat="3">작품</button>
+                <button type="button" class="cat-toggle" data-cat="4">캐릭터</button>
+                <button type="button" class="cat-toggle" data-cat="5">메타</button>
+              </div>
             </div>
 
-            <label class="cb-label" style="margin-bottom:6px;">태그 클릭 동작</label>
-            <div id="direct_click_mode" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" class="mode-btn active" data-clickmode="copy">복사</button>
-              <button type="button" class="mode-btn" data-clickmode="danbooru">Danbooru 열기</button>
+            <div class="field">
+              <span class="cb-label">태그 클릭 동작</span>
+              <div id="direct_click_mode" class="toggle-row">
+                <button type="button" class="mode-btn active" data-clickmode="copy">복사</button>
+                <button type="button" class="mode-btn" data-clickmode="danbooru">Danbooru 열기</button>
+              </div>
             </div>
-            
-            <button
-              class="btn-generate"
-              id="direct_search_btn"
-              style="background: #2a2e38; border-color: var(--border); color: var(--text); margin-top: 0;"
-            >
+
+            <button type="button" class="btn-generate btn-secondary" id="direct_search_btn">
               <span>조회하기</span>
-              <div class="spinner" id="direct_spinner" style="border-top-color: var(--text);"></div>
+              <div class="spinner" id="direct_spinner" hidden></div>
             </button>
-            
-            <div class="error-msg" id="direct_error_msg"></div>
-            
-            <div class="tag-list" id="res_direct_db" style="margin-top: 16px; display: none;"></div>
-          </div>
+
+            <div class="error-msg" id="direct_error_msg" hidden></div>
+
+            <div class="tag-list" id="res_direct_db" hidden></div>
+          </section>
         </div>
 
         <!-- 오른쪽 패널: 결과부 -->
@@ -291,18 +288,14 @@
               한국어 묘사를 입력하고 생성 버튼을 누르면<br />여기에 결과가
               표시됩니다.
             </p>
-            <p id="queue_msg" style="display:none; font-size:16px; color:var(--primary,#6e8efb); font-weight:600; margin-top:8px;"></p>
+            <p id="queue_msg" class="queue-msg" hidden></p>
           </div>
 
-          <div class="results-container" id="results_container">
+          <div class="results-container" id="results_container" hidden>
             <!-- Danbooru태그 박스 (핵심 결과, 최상단) -->
             <div class="result-box" id="final_prompt_box">
               <h3>Danbooru태그</h3>
-              <button
-                class="copy-btn" data-copy="res_final_prompt"
-              >
-                복사하기
-              </button>
+              <button type="button" class="copy-btn" data-copy="res_final_prompt">복사하기</button>
               <div class="ac-wrap">
                 <textarea
                   id="final_prompt_edit"
@@ -313,11 +306,11 @@
                 ></textarea>
                 <div id="ac_dropdown" class="ac-dropdown"></div>
               </div>
-              <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
+              <div class="tag-list final-tags" id="res_final_prompt"></div>
             </div>
 
             <!-- 인물 그리드 (분할 모드 전용) -->
-            <div class="result-box" id="char_grid_box" style="display:none;">
+            <div class="result-box" id="char_grid_box" hidden>
               <h3>인물 구성</h3>
               <div id="res_char_grid" class="char-grid"></div>
             </div>
@@ -325,12 +318,10 @@
             <!-- 자연어 프롬프트 박스 (보조용) -->
             <div class="result-box" id="nl_prompt_box">
               <h3>자연어 프롬프트 (보조용)</h3>
-              <button class="copy-btn" data-copy="res_nl_prompt">
-                복사하기
-              </button>
+              <button type="button" class="copy-btn" data-copy="res_nl_prompt">복사하기</button>
               <div class="final-prompt" id="res_nl_prompt"></div>
-              <div id="unmatched_note" style="display:none; margin-top:8px;"></div>
-              <button class="btn-generate" id="copy_all_btn" style="margin-top: 12px; padding: 8px; font-size: 13px; background: #2a2e38; color: var(--text);">
+              <div id="unmatched_note" hidden></div>
+              <button type="button" class="btn-generate btn-secondary btn-compact" id="copy_all_btn">
                 모두 복사하기 (단보루 태그 + 자연어)
               </button>
             </div>
@@ -338,11 +329,15 @@
             <!-- 키워드 박스 -->
             <div class="result-box" id="keywords_box">
               <h3>추출된 핵심 키워드</h3>
-              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">한국어</div>
-              <div class="tag-list" id="res_keywords_ko"></div>
-              <div style="border-top: 1px solid var(--border, #333); margin: 10px 0;"></div>
-              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">영어 (번역)</div>
-              <div class="tag-list" id="res_keywords_en"></div>
+              <div class="keyword-group">
+                <div class="keyword-label">한국어</div>
+                <div class="tag-list" id="res_keywords_ko"></div>
+              </div>
+              <hr class="divider" />
+              <div class="keyword-group">
+                <div class="keyword-label">영어 (번역)</div>
+                <div class="tag-list" id="res_keywords_en"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -350,10 +345,10 @@
     </div>
 
     <!-- 동일 IP 중복요청 거절 모달 -->
-    <div id="dup_modal" class="dup-modal-overlay" style="display:none;">
-      <div class="dup-modal-box">
+    <div id="dup_modal" class="dup-modal-overlay" hidden>
+      <div class="dup-modal-box" role="alertdialog" aria-labelledby="dup_modal_title">
         <div class="dup-modal-icon">🚫</div>
-        <h3 class="dup-modal-title">요청이 거절되었습니다</h3>
+        <h3 class="dup-modal-title" id="dup_modal_title">요청이 거절되었습니다</h3>
         <p id="dup_modal_msg" class="dup-modal-msg">동일 IP로 처리 중인 작업이 있습니다.</p>
         <p class="dup-modal-sub">이전 작업이 끝난 뒤 다시 시도해주세요.</p>
         <button type="button" class="dup-modal-btn">확인</button>

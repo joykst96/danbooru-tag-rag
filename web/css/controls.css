@@ -1,0 +1,483 @@
+/* ==========================================================================
+   입력 컨트롤 · 라벨, 입력창, 슬라이더, 스위치, 칩, 세그먼트, 버튼, 인물칸, 접이식 설정
+   ========================================================================== */
+
+/* ── 라벨 ── */
+label,
+.field-label,
+.cb-label {
+  display: block;
+  margin: 0;
+  font: var(--label-font);
+  color: var(--label-fg);
+}
+
+/* ── 입력창 ── */
+textarea,
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: var(--border-width-thin) solid var(--input-border);
+  border-radius: var(--input-radius);
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font: var(--input-font);
+}
+textarea::placeholder,
+input::placeholder {
+  color: var(--input-placeholder);
+}
+textarea {
+  resize: vertical;
+  min-height: 120px;
+  scrollbar-width: none;
+}
+textarea::-webkit-scrollbar {
+  display: none;
+}
+textarea:focus,
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: var(--input-border-focus);
+}
+input:disabled {
+  opacity: 0.4;
+}
+
+/* 인물칸·고정태그 안의 입력: 카드(--card-bg) 위라 표면색으로 띄운다 */
+.cb-input,
+.cb-textarea {
+  background: var(--color-bg-surface);
+}
+.cb-textarea {
+  min-height: 0;
+}
+
+/* ── 슬라이더 ── */
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-lg);
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: var(--slider-track-height);
+  margin: 0;
+  padding: 0;
+  background: var(--slider-track-bg);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--progress-radius);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-bg);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-bg);
+  cursor: pointer;
+}
+.val-display {
+  flex: 0 0 auto;
+  min-width: 42px;
+  text-align: right;
+  font: var(--font-subtitle);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+
+/* ── 스위치 행 ── */
+.checkbox-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-md);
+}
+.checkbox-container label,
+.option-label {
+  font: var(--font-subtitle);
+  color: var(--color-fg);
+  cursor: pointer;
+}
+.option-label {
+  cursor: default;
+}
+
+/* iOS 스타일 스위치 토글 */
+input.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--switch-knob-size) * 2 + var(--switch-inset) * 2);
+  height: calc(var(--switch-knob-size) + var(--switch-inset) * 2);
+  margin: 0;
+  border: none;
+  border-radius: var(--switch-radius);
+  background: var(--switch-track-off);
+  cursor: pointer;
+  transition: var(--switch-transition);
+}
+input.switch::after {
+  content: "";
+  position: absolute;
+  top: var(--switch-inset);
+  left: var(--switch-inset);
+  width: var(--switch-knob-size);
+  height: var(--switch-knob-size);
+  border-radius: var(--switch-knob-radius);
+  background: var(--switch-knob);
+  transition: var(--switch-transition);
+}
+input.switch:checked {
+  background: var(--switch-track-on);
+}
+input.switch:checked::after {
+  transform: translateX(var(--switch-knob-size));
+}
+input.switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 모드 토글 (기본/고급, 복사/Danbooru 열기) ── */
+.toggle-row {
+  display: flex;
+  gap: var(--gap-md);
+}
+.mode-btn {
+  flex: 1;
+  padding: var(--button-padding-y) var(--button-sm-padding-x);
+  font: var(--control-md-font);
+  color: var(--color-fg-muted);
+  background: var(--color-bg);
+  border: var(--button-border-width) solid var(--color-border);
+  border-radius: var(--button-radius);
+  cursor: pointer;
+  transition: color var(--transition-base), background var(--transition-base), border-color var(--transition-base);
+}
+.mode-btn:hover {
+  color: var(--color-fg);
+}
+.mode-btn.active {
+  color: var(--button-primary-fg);
+  background: var(--button-primary-bg);
+  border-color: var(--button-primary-bg);
+}
+
+/* ── 칩 (검색 범위·카테고리·자연어 톤: 여러 개/하나 선택) ── */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+}
+.cat-toggle,
+.tone-btn {
+  padding: var(--chip-padding-y) var(--chip-padding-x);
+  font: var(--chip-font);
+  color: var(--chip-fg);
+  background: var(--chip-bg);
+  border: var(--border-width-thin) solid var(--chip-border);
+  border-radius: var(--chip-radius);
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-base), background var(--transition-base), border-color var(--transition-base);
+}
+.cat-toggle:hover,
+.tone-btn:hover {
+  color: var(--chip-fg-hover);
+  border-color: var(--chip-border-hover);
+}
+.cat-toggle.active,
+.tone-btn.active {
+  color: var(--chip-fg-selected);
+  background: var(--chip-bg-selected);
+  border-color: var(--chip-border-selected);
+}
+
+/* ── 세그먼트 (인물칸 출처 3택) ── */
+.source-seg {
+  display: flex;
+  gap: var(--segment-gap);
+  padding: var(--segment-padding);
+  background: var(--segment-bg);
+  border: var(--border-width-thin) solid var(--segment-border);
+  border-radius: var(--segment-radius);
+}
+.src-btn,
+.seg-btn {
+  padding: var(--segment-item-padding-y) var(--segment-item-padding-x);
+  font: var(--segment-sm-font);
+  color: var(--segment-item-fg);
+  background: transparent;
+  border: none;
+  border-radius: var(--segment-item-radius);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.src-btn {
+  flex: 1;
+}
+.src-btn:hover,
+.seg-btn:hover {
+  color: var(--segment-item-fg-hover);
+}
+.src-btn.active,
+.seg-btn.active {
+  color: var(--segment-item-fg-active);
+  background: var(--segment-item-bg-active);
+}
+
+/* 작은 세그먼트 (가중치 표기·고정태그 위치/우선순위) */
+.seg {
+  display: inline-flex;
+  gap: var(--segment-gap);
+  padding: var(--segment-padding);
+  background: var(--segment-bg);
+  border: var(--border-width-thin) solid var(--segment-border);
+  border-radius: var(--segment-sm-radius);
+  vertical-align: middle;
+}
+.seg-btn {
+  padding: var(--segment-sm-item-padding-y) var(--segment-sm-item-padding-x);
+  border-radius: var(--segment-sm-item-radius);
+}
+
+/* ── 고정 태그 ── */
+.fixed-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+.fixed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-md);
+}
+.fixed-head .ft-title {
+  font: var(--label-strong-font);
+  color: var(--color-fg);
+}
+.fixed-head .ft-ctl-label {
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.artist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+}
+.artist-row .artist-name {
+  flex: 1;
+}
+.artist-row .artist-weight {
+  flex: 0 0 72px;
+  width: 72px;
+  text-align: center;
+}
+
+/* ── 인물칸 (분할 모드) ── */
+.char-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+  padding: var(--card-padding);
+  background: var(--card-bg);
+  border: var(--border-width-thin) solid var(--card-border);
+  border-radius: var(--card-radius);
+}
+.char-block .src-hint {
+  margin-bottom: var(--gap-md);
+}
+.char-block .cb-row {
+  display: flex;
+  gap: var(--gap-md);
+  margin: var(--gap-xs) 0;
+}
+.char-block .cb-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+}
+/* 배경/공통 칸은 강조 테두리 */
+.char-block-bg {
+  border-color: var(--color-accent-border);
+}
+/* 패스스루(DB 미경유 신규 캐릭터)는 점선 외곽선 */
+.char-block.is-passthrough {
+  outline: var(--border-width-thin) dashed var(--color-accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* 작은 × 버튼 (인물칸 우상단 = 라벨 줄 옆·작가 행 끝) */
+.cb-remove {
+  position: absolute;
+  top: var(--inset-sm);
+  right: var(--inset-sm);
+  width: var(--icon-button-sm-size);
+  height: var(--icon-button-sm-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font: var(--icon-button-sm-font);
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--input-radius);
+  cursor: pointer;
+}
+.cb-remove:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.artist-row .artist-remove {
+  position: static;
+  flex: 0 0 auto;
+}
+
+/* 점선 추가 버튼 (+ 인물 추가 / + 작가 추가) */
+.add-char-btn {
+  width: 100%;
+  padding: var(--button-padding-y);
+  font: var(--control-md-font);
+  color: var(--color-accent);
+  background: transparent;
+  border: var(--border-width-thin) dashed var(--color-border-strong);
+  border-radius: var(--button-radius);
+  cursor: pointer;
+}
+.add-char-btn:hover {
+  border-color: var(--color-accent);
+}
+.name-unmatched-note {
+  font: var(--font-caption);
+  color: var(--color-warning);
+}
+
+/* ── 버튼 ── */
+.btn-generate {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--button-gap);
+  padding: var(--button-padding-y) var(--button-padding-x);
+  font: var(--button-font);
+  color: var(--button-primary-fg);
+  background: var(--button-primary-bg);
+  border: 0;
+  border-radius: var(--button-radius);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.btn-generate:hover {
+  background: var(--button-primary-bg-hover);
+}
+.btn-generate:active {
+  background: var(--button-primary-bg-press);
+}
+.btn-generate.btn-secondary {
+  color: var(--button-secondary-fg);
+  background: var(--button-secondary-bg);
+}
+.btn-generate.btn-secondary:hover {
+  background: var(--button-secondary-bg-hover);
+}
+.btn-generate.btn-secondary:active {
+  background: var(--button-secondary-bg-press);
+}
+.btn-generate.btn-compact {
+  padding: var(--button-sm-padding-y) var(--button-sm-padding-x);
+  font: var(--control-md-font);
+}
+.btn-generate:disabled {
+  color: var(--button-disabled-fg);
+  background: var(--button-disabled-bg);
+  cursor: not-allowed;
+}
+/* 복사 성공 표시 (JS가 잠깐 붙였다 뗀다) */
+.btn-generate.is-copied {
+  color: var(--button-primary-fg);
+  background: var(--button-primary-bg);
+}
+
+.spinner {
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  border: var(--spinner-width) solid color-mix(in srgb, currentColor var(--spinner-track-alpha), transparent);
+  border-top-color: currentColor;
+  border-radius: var(--spinner-radius);
+  animation: spin var(--spinner-duration) linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-msg {
+  padding: var(--input-padding-y) var(--input-padding-x);
+  font: var(--font-body-sm);
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  border: var(--border-width-thin) solid var(--color-danger-border);
+  border-radius: var(--input-radius);
+}
+
+/* ── 접이식 설정 ── */
+.advanced-settings {
+  padding: var(--panel-padding);
+  background: var(--color-bg-sunken);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--card-radius);
+}
+.advanced-settings summary {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  font: var(--control-md-font);
+  color: var(--color-fg);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.advanced-settings summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-settings summary::before {
+  content: "▶";
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+  transition: transform var(--transition-slow);
+}
+.advanced-settings[open] summary::before {
+  transform: rotate(90deg);
+}
+.advanced-settings .settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xl);
+  margin-top: var(--gap-xl);
+  padding-top: var(--gap-xl);
+  border-top: var(--border-width-thin) solid var(--color-border);
+}

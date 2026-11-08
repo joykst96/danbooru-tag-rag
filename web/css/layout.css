@@ -1,0 +1,154 @@
+/* ==========================================================================
+   레이아웃 · 페이지 골격, 패널, 간격(stack/field), 글자 역할 유틸
+   --------------------------------------------------------------------------
+   컴포넌트는 바깥 여백(margin)을 갖지 않는다. 간격은 부모의 gap으로 정한다(디자인 토큰 레이아웃 규칙 1).
+   ========================================================================== */
+
+/* JS는 표시/숨김을 hidden 속성으로 한다. 클래스의 display:flex 가 UA의 [hidden]을 덮지 않게 고정. */
+[hidden] {
+  display: none !important;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.wrap {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--layout-page-padding-y) var(--layout-page-padding-x);
+}
+
+/* ── 헤더 ── */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  margin-bottom: var(--gap-2xl);
+}
+.header h1 {
+  font: var(--font-title);
+}
+.header .subtitle {
+  font: var(--font-subtitle);
+  color: var(--color-fg-muted);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+  margin-top: var(--gap-xl);
+  cursor: default;
+}
+
+/* ── 2단 그리드 ── */
+.main-grid {
+  display: grid;
+  grid-template-columns: var(--layout-sidebar-width) 1fr;
+  gap: var(--layout-gap);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* PC: 결과 패널이 스크롤을 따라오게 */
+@media (min-width: 901px) {
+  #result_panel {
+    position: sticky;
+    top: var(--layout-sticky-top);
+    max-height: calc(100vh - var(--layout-sticky-top) * 2);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  #result_panel::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ── 패널 ── */
+.panel {
+  background: var(--panel-bg);
+  border: var(--border-width-thin) solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  padding: var(--panel-padding);
+}
+.input-panel,
+.direct-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xl);
+}
+.section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+}
+.section-title {
+  font: var(--font-heading);
+  color: var(--color-accent);
+}
+.sub-title {
+  font: var(--heading-sm-font);
+  color: var(--color-fg);
+}
+
+/* ── 간격 묶음 ── */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+}
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+/* 라벨 줄 + 입력: 라벨과 입력 사이는 --label-gap */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+}
+.option-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-gap);
+}
+
+.divider {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: var(--border-width-thin) solid var(--color-border);
+}
+.divider-section {
+  margin: var(--gap-lg) 0;
+}
+
+/* ── 글자 역할 유틸 ── */
+.help {
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.help-lead {
+  font: var(--font-body-sm);
+  color: var(--color-fg-muted);
+}
+.text-warning {
+  color: var(--color-warning);
+}
+.text-danger {
+  color: var(--color-danger);
+}
+.text-soft {
+  opacity: 0.8;
+}
+code {
+  font: var(--code-inline-font);
+  font-size: inherit;
+}

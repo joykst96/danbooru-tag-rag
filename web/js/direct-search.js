@@ -25,17 +25,17 @@ export async function searchDirectDB() {
   const errorMsg = $("direct_error_msg");
   const resultContainer = $("res_direct_db");
 
-  errorMsg.style.display = "none";
-  resultContainer.style.display = "none";
+  errorMsg.hidden = true;
+  resultContainer.hidden = true;
 
   if (!query) {
     errorMsg.textContent = "조회할 단어를 입력해주세요.";
-    errorMsg.style.display = "block";
+    errorMsg.hidden = false;
     return;
   }
 
   btn.disabled = true;
-  spinner.style.display = "block";
+  spinner.hidden = false;
   btnText.textContent = "조회 중...";
 
   const categories = Array.from(
@@ -46,46 +46,28 @@ export async function searchDirectDB() {
     const data = await directSearch({ query, threshold, categories });
     state.directResults = data.results || [];
     renderDirectDBResults();
-    resultContainer.style.display = "flex";
+    resultContainer.hidden = false;
   } catch (err) {
     errorMsg.textContent = err.message || "API 서버에 연결할 수 없습니다.";
-    errorMsg.style.display = "block";
+    errorMsg.hidden = false;
   } finally {
     btn.disabled = false;
-    spinner.style.display = "none";
+    spinner.hidden = true;
     btnText.textContent = "조회하기";
   }
 }
 
-// 복사 성공 표시: 폭을 고정한 채 "복사!"로 잠깐 바꿨다가 되돌린다.
+// 복사 성공 표시: 폭을 고정한 채 "복사!"로 잠깐 바꿨다가 되돌린다(색은 CSS .is-copied).
 function flashTagCopied(el) {
   const originalText = el.textContent;
-  const originalBg = el.style.background;
-  const originalColor = el.style.color;
-  const originalBorder = el.style.borderColor;
-  const originalWidth = el.style.width;
-
-  const currentWidth = el.offsetWidth;
-  el.style.width = currentWidth + "px";
-  el.style.display = "inline-flex";
-  el.style.justifyContent = "center";
-  el.style.alignItems = "center";
-  el.style.boxSizing = "border-box";
-
+  el.style.width = el.offsetWidth + "px";
   el.textContent = "복사!";
-  el.style.color = "#0b0e14";
-  el.style.background = "var(--primary)";
-  el.style.borderColor = "var(--primary)";
+  el.classList.add("is-copied");
 
   setTimeout(() => {
     el.textContent = originalText;
-    el.style.background = originalBg;
-    el.style.color = originalColor;
-    el.style.borderColor = originalBorder;
-    el.style.width = originalWidth;
-    el.style.display = "";
-    el.style.justifyContent = "";
-    el.style.alignItems = "";
+    el.style.width = "";
+    el.classList.remove("is-copied");
   }, 1000);
 }
 
@@ -97,7 +79,7 @@ export function renderDirectDBResults() {
   resultContainer.innerHTML = "";
 
   if (state.directResults.length === 0) {
-    resultContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
+    resultContainer.innerHTML = '<span class="empty-note">매칭된 태그가 없습니다.</span>';
     return;
   }
   state.directResults.forEach((item) => {
@@ -106,7 +88,6 @@ export function renderDirectDBResults() {
 
     const tagText = formatTagText(item.tag, opts);
     el.textContent = `${tagText} (${item.score.toFixed(2)})`;
-    el.style.cursor = "pointer";
 
     let descText = "";
     const cleanTag = item.tag.trim();

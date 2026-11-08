@@ -8,23 +8,23 @@ export function showDuplicateModal(msg) {
   const m = $("dup_modal");
   const t = $("dup_modal_msg");
   if (t) t.textContent = msg || "동일 IP로 처리 중인 작업이 있습니다.";
-  if (m) m.style.display = "flex";
+  if (m) m.hidden = false;
 }
 export function closeDuplicateModal() {
   const m = $("dup_modal");
-  if (m) m.style.display = "none";
+  if (m) m.hidden = true;
 }
 
 function showError(msg) {
   const errorEl = $("error_msg");
   errorEl.textContent = msg;
-  errorEl.style.display = "block";
+  errorEl.hidden = false;
 }
 
 function resetButton() {
   const btn = $("generate_btn");
   btn.disabled = false;
-  $("spinner").style.display = "none";
+  $("spinner").hidden = true;
   btn.querySelector("span").textContent = "태그 생성하기";
 }
 
@@ -64,9 +64,9 @@ function showQueueStatus(status) {
   if (!qm) return;
   if (status.indexOf("대기") !== -1) {
     qm.textContent = "⏳ " + status;
-    qm.style.display = "block";
+    qm.hidden = false;
   } else {
-    qm.style.display = "none";
+    qm.hidden = true;
   }
 }
 
@@ -75,11 +75,11 @@ export async function generateTags() {
   const btnText = btn.querySelector("span");
 
   // 초기화
-  $("error_msg").style.display = "none";
-  $("results_container").style.display = "none";
-  $("empty_state").style.display = "flex";
+  $("error_msg").hidden = true;
+  $("results_container").hidden = true;
+  $("empty_state").hidden = false;
   btn.disabled = true;
-  $("spinner").style.display = "block";
+  $("spinner").hidden = false;
   btnText.textContent = "생성 준비 중...";
 
   state.result = {};
@@ -89,9 +89,9 @@ export async function generateTags() {
 
   const splitUnmatchedNames = [];
   const note = $("unmatched_note");
-  if (note) { note.style.display = "none"; note.innerHTML = ""; }
+  if (note) { note.hidden = true; note.innerHTML = ""; }
   const grid = $("char_grid_box");
-  if (grid) grid.style.display = "none";
+  if (grid) grid.hidden = true;
 
   const req = buildRequest();
   if (req.error) {
@@ -119,7 +119,7 @@ export async function generateTags() {
           state.result.characters.push(ch);
           if (ch.name_unmatched && ch.name) {
             splitUnmatchedNames.push(ch.name);
-            note.style.display = "block";
+            note.hidden = false;
             note.innerHTML =
               '<span class="name-unmatched-note">⚠ DB에 없는 캐릭터(태그 미검색, 자연어에만 이름 사용): ' +
               splitUnmatchedNames.map(escapeHtml).join(", ") + "</span>";

@@ -11,7 +11,7 @@ import {
 import { renderDirectDBResults } from "./direct-search.js";
 import { doCopy } from "./clipboard.js";
 
-const EMPTY_HTML = (text) => `<span style="color: var(--dim); font-size: 13px;">${text}</span>`;
+const EMPTY_HTML = (text) => `<span class="empty-note">${text}</span>`;
 
 // 가중치 표기 세그먼트(로컬/NAI)
 export function setWeightSyntax(btn) {
@@ -34,13 +34,13 @@ export function displayResults() {
   const data = state.result;
   const opts = readFormatOptions();
 
-  $("empty_state").style.display = "none";
-  $("results_container").style.display = "flex";
+  $("empty_state").hidden = true;
+  $("results_container").hidden = false;
 
   // 1. 자연어 프롬프트 처리
   const nlPromptBox = $("nl_prompt_box");
   if (data.english_prompt) {
-    nlPromptBox.style.display = "block";
+    nlPromptBox.hidden = false;
     // 단어형+(phrase)는 danbooru 그리드처럼 뱃지 + 휠 가중치로 렌더.
     // 그 외 톤(rich/plain)은 기존대로 평문 문장.
     if (state.nlTone === "phrase") {
@@ -52,13 +52,13 @@ export function displayResults() {
       nlEl.textContent = data.english_prompt;
     }
   } else {
-    nlPromptBox.style.display = "none";
+    nlPromptBox.hidden = true;
   }
 
   // 2. 최종 단보루 프롬프트 처리
   const finalPromptBox = $("res_final_prompt").closest(".result-box");
   if (data.final_prompt) {
-    finalPromptBox.style.display = "block";
+    finalPromptBox.hidden = false;
     const finalContainer = $("res_final_prompt");
     finalContainer.innerHTML = "";
 
@@ -138,7 +138,7 @@ export function displayResults() {
     // textarea(편집칸)를 데이터와 동기화. 단 포커스 중이면 덮어쓰지 않음.
     syncFinalEditFromData();
   } else {
-    finalPromptBox.style.display = "none";
+    finalPromptBox.hidden = true;
   }
 
   // 3. 키워드 처리 (한국어 + 영어)
@@ -146,7 +146,7 @@ export function displayResults() {
   const hasKo = data.ko_units && data.ko_units.length > 0;
   const hasEn = data.keywords && data.keywords.length > 0;
   if (hasKo || hasEn) {
-    kwBox.style.display = "block";
+    kwBox.hidden = false;
 
     const koContainer = $("res_keywords_ko");
     koContainer.innerHTML = "";
@@ -170,7 +170,7 @@ export function displayResults() {
       });
     }
   } else {
-    kwBox.style.display = "none";
+    kwBox.hidden = true;
   }
 
   // 4. 인물 그리드 (분할 모드 전용)
@@ -182,10 +182,10 @@ function renderCharGrid(data, opts) {
   const chars = data.characters || [];
   const bgTags = data.background_tags || [];
   if (!(chars.length > 0 || bgTags.length > 0)) {
-    gridBox.style.display = "none";
+    gridBox.hidden = true;
     return;
   }
-  gridBox.style.display = "block";
+  gridBox.hidden = false;
   const grid = $("res_char_grid");
   grid.innerHTML = "";
   const tagHtml = (t) => '<span class="cc-tag">' + escapeHtml(formatTagText(t, opts)) + "</span>";
@@ -196,7 +196,7 @@ function renderCharGrid(data, opts) {
 
     const head = ch.name
       ? escapeHtml(ch.name)
-      : '<span style="color:var(--dim);">인물 ' + (ch.index || i + 1) + "</span>";
+      : '<span class="cc-placeholder">인물 ' + (ch.index || i + 1) + "</span>";
     const series = ch.series
       ? ' <span class="cc-series">[' + escapeHtml(ch.series) + "]</span>"
       : "";
@@ -212,7 +212,7 @@ function renderCharGrid(data, opts) {
     card.innerHTML =
       '<div class="cc-head">' + head + series + miss + pt + "</div>" +
       '<div class="cc-tags">' +
-      (tags || '<span style="color:var(--dim);font-size:12px;">태그 없음</span>') +
+      (tags || '<span class="cc-empty">태그 없음</span>') +
       "</div>";
     grid.appendChild(card);
   });
@@ -305,29 +305,22 @@ export function onFinalEditInput() {
 
 // textarea blur → 정규화된 값으로 뱃지 재렌더 + textarea 재동기화.
 export function onFinalEditBlur() {
-  // 드롭다운 항목 클릭(mousedown)이 blur보다 먼저 처리되도록 약간 지연 후 닫기.
-  setTimeout(hideAc, 150);
+  // 드롭다운은 autocomplete.js 가 자기 blur 리스너로 닫는다.
+  // (예전 코드는 여기서 정의되지 않은 hideAc 를 불러 ReferenceError 로 멈췄고, 그래서 아래 재렌더가 안 됐다.)
   onFinalEditInput();
   displayResults();
 }
 
 // ── 복사 ──
-// 복사 성공 표시: 잠깐 강조색으로 바꿨다가 되돌린다.
+// 복사 성공 표시: 잠깐 강조색(CSS .is-copied)으로 바꿨다가 되돌린다.
 function flashCopied(btn, text, restoreText, ms) {
   const originalText = restoreText ?? btn.textContent;
-  const originalBg = btn.style.background;
-  const originalColor = btn.style.color;
-
   btn.textContent = text;
-  btn.style.color = "#0b0e14";
-  btn.style.borderColor = "var(--primary)";
-  btn.style.background = "var(--primary)";
+  btn.classList.add("is-copied");
 
   setTimeout(() => {
     btn.textContent = originalText;
-    btn.style.color = originalColor;
-    btn.style.borderColor = "";
-    btn.style.background = originalBg;
+    btn.classList.remove("is-copied");
   }, ms);
 }
 
@@ -377,4 +370,3 @@ export function copyAll() {
   });
 }
 
-export { flashCopied };
