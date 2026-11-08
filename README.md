@@ -40,7 +40,7 @@ and a local LLM (llama.cpp). Tags that are not in the database never reach the o
   - 평가셋 168문항에서 단일 질의 MRR 0.739, 서비스 방식(조각별 한국어+영어+어휘 일치) 후보 회수율 96%입니다(근거: tag-embedding 벤치).
 - **정확도**(같은 LLM gemma4 26B A4B, 실행 전에 고정한 기준):
   - 새 장면 10개 필수 개념 46/48(96%).
-  - 인원수 40문장: 한국어 37/40, 영어 38/40. 남은 오답은 동물·관계어를 `others`로 세는 경우입니다.
+  - 인원수: 기존 40문장 한국어·영어 39/40, 실행 전에 고정한 새 문장 24개 한국어 21/24·영어 23/24.
 - **속도**: 요청 한 번에 LLM을 3번 부릅니다(분해, 선택, 자연어). 운영 서버(MoE 일부 CPU)에서 요청 전체가 약 14~19초입니다.
   - 프롬프트 캐시(`LLM_CACHE_PROMPT`, 기본 on)를 켜서 시스템 프롬프트 재처리를 없앴습니다(호출당 3~5초).
   - 출력 JSON을 압축했고(선택 약 34토큰, 분해 약 80토큰), 질의 임베딩을 한 번에 묶습니다.
@@ -157,7 +157,7 @@ Both are blocked by construction.
 
 Strings in the decomposition and selection output may not contain brackets or double quotes (schema `pattern`). With the QAT Q4_K_M model, pair delimiters sometimes leaked into the strings and units vanished (2-3 of 10 new scenes); the pattern removes this, and outputs for normal sentences are byte-identical with and without it.
 
-Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `sim`: `<tag> <definition> <aliases>` built from the `mengod-hf/danbooru-tags-kr` source, with the `SentenceSimilarity` prompt on both documents and queries (single-query MRR 0.739; candidate recall 96% in the service setting). With gemma4 26B A4B, required-concept coverage on 10 new scenes is 46/48, headcount accuracy on a 40-sentence set is 37/40 (Korean) and 38/40 (English), and a full request takes about 14-19 s on the production server thanks to prompt caching (`LLM_CACHE_PROMPT`, default on), compact JSON output and batched query embedding.
+Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `sim`: `<tag> <definition> <aliases>` built from the `mengod-hf/danbooru-tags-kr` source, with the `SentenceSimilarity` prompt on both documents and queries (single-query MRR 0.739; candidate recall 96% in the service setting). With gemma4 26B A4B, required-concept coverage on 10 new scenes is 46/48, headcount accuracy is 39/40 on a 40-sentence set and 21/24 (Korean) / 23/24 (English) on a fresh held-out set, and a full request takes about 14-19 s on the production server thanks to prompt caching (`LLM_CACHE_PROMPT`, default on), compact JSON output and batched query embedding.
 
 ### Two input modes
 
