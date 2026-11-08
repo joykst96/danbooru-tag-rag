@@ -172,6 +172,14 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
     picks: list[list[str]] = []
     for i, (u, cs) in enumerate(zip(units, cands)):
         r = res.get(f"u{i}")
+        if isinstance(r, str) and _NUM_STR.match(r):
+            # 번호를 문자열로 낸 경우("4", "1, 0"): 범위 안이면 후보 번호로 해석, 아니면 버리고 분해 영어로
+            nums = [int(x) for x in re.findall(r"\d+", r)]
+            notes.append(f"{u['ko']}: 숫자 문자열 {r!r} → 번호로 해석")
+            r = nums
+        elif isinstance(r, str) and _INSTRUCTION_LEAK.search(r):
+            notes.append(f"{u['ko']}: 지시문 문구 {r!r} → 분해 영어 '{u['en']}'")
+            r = None
         if isinstance(r, list):
             tags = list(dict.fromkeys(cs[j]["tag"] for j in r if isinstance(j, int) and 0 <= j < len(cs)))
             picks.append(tags or ["phrase:" + u["en"]])
@@ -181,6 +189,15 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
             picks.append(["phrase:" + u["en"]])
             notes.append(f"{u['ko']}: 응답 없음 → 분해 영어 '{u['en']}'")
     return picks, notes
+
+
+# 선택 응답의 구 문자열 검사 (2026-11-08 운영 로그 표본 e10).
+# - 숫자만 있는 문자열: 스키마가 anyOf[번호 배열, 구 문자열]이라 모델이 "u0":"4" 처럼 번호를 문자열로 내면
+#   구로 처리돼 최종 태그에 "4, 1, 0"이 찍혔다(n=73, n=17). 구 패턴에 영문자를 필수로 넣는 방법도 있지만
+#   문법이 바뀌면 모델 출력 전체가 달라질 수 있어(번호 대신 엉뚱한 글자를 이어 쓰게 됨) 코드에서 해석한다.
+# - 지시문 문구: 프롬프트의 "when NO candidate matches"가 구로 새어 나왔다(n=63 "no candidate matches").
+_NUM_STR = re.compile(r"^\s*\d+(\s*[,/ ]\s*\d+)*\s*$")
+_INSTRUCTION_LEAK = re.compile(r"\bcandidates?\b|\bno\s+match|^\s*(none|n/?a|null|nothing)\s*$", re.IGNORECASE)
 
 
 async def decompose(text: str) -> dict:
