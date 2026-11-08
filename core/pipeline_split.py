@@ -74,15 +74,27 @@ class CharResult:
     series_en: str = ""                                     # 작품의 영어 표기
 
     def nl_name(self) -> str:
-        """NL 에 쓸 이름. 매칭에 실패한 한글 이름은 영어 표기로 바꾼다(e10 n=8: "주연 from 젠레스 존 제로")."""
-        if self.name_unmatched and _HANGUL.search(self.name) and self.name_en:
-            return self.name_en
+        """
+        NL 에 쓸 이름. 한글 이름은 영어로 바꾼다: 매칭된 캐릭터 태그가 있으면 그 태그 본체, 없으면 분해의 영어 표기
+        (e10 n=8: "주연 from 젠레스 존 제로"). 한글이 없거나 바꿀 표기가 없으면 입력 그대로.
+        """
+        if _HANGUL.search(self.name):
+            if self.char_tags:
+                return search_mod.tag_base(self.char_tags[0]).replace("_", " ")
+            if self.name_en:
+                return self.name_en
         return self.name
 
     def nl_series(self) -> str:
-        """NL 에 쓸 작품명. 작품 태그를 못 찾은 한글 작품명은 영어 표기로 바꾼다."""
-        if not self.series_tags and _HANGUL.search(self.series) and self.series_en:
-            return self.series_en
+        """
+        NL 에 쓸 작품명. 한글 작품명은 매칭된 작품 태그, 없으면 분해의 영어 표기로 바꾼다.
+        작품 태그가 매칭돼도 입력 한글을 그대로 넘기면 NL 이 "Frieren from 장송의 프리렌"처럼 한글을 남겼다(3회 중 1회).
+        """
+        if _HANGUL.search(self.series):
+            if self.series_tags:
+                return self.series_tags[0].replace("_", " ")
+            if self.series_en:
+                return self.series_en
         return self.series
 
     def output_tags(self) -> list[str]:
