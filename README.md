@@ -40,7 +40,7 @@ and a local LLM (llama.cpp). Tags that are not in the database never reach the o
 ### 설치와 실행
 
 ```bash
-uv sync                      # 또는 pip install -e .   (torch 는 환경에 맞는 CUDA 빌드를 따로 설치)
+uv sync                      # 또는 pip install -e .   (torch·torchvision 은 환경에 맞는 CUDA 빌드를 따로 설치)
 cp .env.example .env         # LLM 엔드포인트, EMBEDDING_DEVICE 설정
 python download_model.py     # 최초 1회 → models/embeddinggemma-2
 python -m core.tags_source   # 태그 CSV → danbooru-tags.csv
@@ -94,7 +94,7 @@ Both are blocked by construction. The sentence is split into one-concept units, 
 ### Setup / Run
 
 ```bash
-uv sync                      # or pip install -e .   (install a CUDA build of torch for your GPU)
+uv sync                      # or pip install -e .   (install CUDA builds of torch and torchvision for your GPU)
 cp .env.example .env         # LLM endpoint, EMBEDDING_DEVICE
 python download_model.py     # once → models/embeddinggemma-2
 python -m core.tags_source   # tag CSV → danbooru-tags.csv

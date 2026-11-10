@@ -13,6 +13,8 @@ dependencies = [
     "pandas>=2.0",
     "sentence-transformers>=6.1",   # embeddinggemma-2 요구 (모델 카드: 6.1 미만은 멀티모달 입력 순서 무시)
     "transformers>=5.22",          # embeddinggemma-2 를 로드·검증한 버전(5.22.1). 모델 config 는 5.18.0.dev0 로 저장됨
+    "torchvision",                 # embeddinggemma-2 프로세서가 비디오 처리기를 함께 불러온다(없으면 로드 실패). torch 와 같은 빌드로 설치
+    "pillow>=10",                  # 같은 이유로 이미지 처리기에 필요
     "tqdm>=4.66",
     "python-dotenv>=1.0",
 ]

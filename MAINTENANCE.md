@@ -137,5 +137,6 @@
 ## 의존성
 
 - Python 3.11 이상, sentence-transformers 6.1 이상, transformers 5.22 이상(embeddinggemma-2)
-- torch는 GPU에 맞는 CUDA 빌드를 따로 설치합니다. Docker 이미지는 CPU 빌드를 씁니다.
+- torch와 torchvision은 GPU에 맞는 CUDA 빌드를 따로 설치합니다. Docker 이미지는 CPU 빌드를 씁니다.
+- torchvision과 Pillow는 텍스트만 임베딩해도 필요합니다. embeddinggemma-2의 프로세서가 이미지·비디오 처리기까지 함께 불러오기 때문에, 없으면 모델 로드가 실패합니다.
 - `lancedb` 외에 `pylance`와 `pandas`가 필요합니다(pyproject에 있음).

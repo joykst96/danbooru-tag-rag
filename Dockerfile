@@ -11,11 +11,12 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY uv.lock* ./
 
-# CPU torch 인덱스 고정 + 의존성 설치
+# CPU torch·torchvision 인덱스 고정 + 의존성 설치
+# torchvision·Pillow: embeddinggemma-2 프로세서가 이미지·비디오 처리기까지 함께 불러와서, 없으면 모델 로드가 실패한다.
 # (pyproject 에 torch CPU 인덱스를 명시해두는 것이 가장 깔끔하지만,
 #  안전하게 여기서도 CPU 휠을 강제한다)
 ENV UV_LINK_MODE=copy
-RUN uv pip install --system --index-url https://download.pytorch.org/whl/cpu torch \
+RUN uv pip install --system --index-url https://download.pytorch.org/whl/cpu torch torchvision \
  && uv pip install --system -r pyproject.toml
 
 # 애플리케이션 코드
