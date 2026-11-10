@@ -23,6 +23,11 @@ COPY core/ ./core/
 COPY index.html ./
 COPY web/ ./web/
 
+# 생성 로그 build.commit 용(이미지 안에는 .git 이 없다). 코드 COPY 뒤에 둬서 의존성 레이어 캐시를 깨지 않는다.
+# 넘기지 않으면 unknown 이고, 로그의 build.code_sha(core/*.py 해시)로 코드를 식별한다.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+
 # 런타임 환경: CPU 임베딩 강제, 데이터 경로는 마운트 위치로
 ENV EMBEDDING_DEVICE=cpu \
     DATA_DIR=/app/data \

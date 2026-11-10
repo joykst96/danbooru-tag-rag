@@ -1,6 +1,10 @@
 services:
   danbooru-rag:
-    build: .
+    build:
+      context: .
+      args:
+        # 생성 로그 build.commit. 배포 시 GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: danbooru-rag
     ports:
       - "3333:3333"

@@ -430,7 +430,20 @@ async def stream_structured_pipeline(
     if not count and not chars and "no_humans" not in body and needs_no_humans(korean_prompt, body, variant):
         count = ["no_humans"]
     final = list(dict.fromkeys(count + char_tags + body))
-    yield {"stage": "final", "status": "태그 완성", "data": {"final_tags": final, "hallucinated": list(dropped_db)}}
+    # 생성 로그용 추적(api 가 파일 로그에만 남기고 클라이언트로는 보내지 않는다).
+    # 조각마다 분해(ko/en) → 후보 태그 이름 → 선택을 한 줄로 이어서, 틀린 태그가 검색 탓인지 선택 탓인지 로그만 보고 가른다.
+    trace = {
+        "people": count,
+        "dropped_people": [u["ko"] + "/" + u["en"] for u in dropped_people],
+        "units": [
+            {"kind": "character" if i < len(chars) else "unit", "ko": u["ko"], "en": u["en"],
+             "cands": [h["tag"] for h in cs], "picks": p}
+            for i, (u, cs, p) in enumerate(zip(all_units, all_cands, picks))
+        ],
+        "select_notes": notes,
+    }
+    yield {"stage": "final", "status": "태그 완성",
+           "data": {"final_tags": final, "hallucinated": list(dropped_db), "trace": trace}}
 
     # ── 5. 자연어 (기존 톤 기능 그대로) ──
     nl_prompt = ""

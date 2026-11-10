@@ -71,9 +71,11 @@ compose 에 `extra_hosts: ["host.docker.internal:host-gateway"]`를 두거나 �
 
 ```bash
 mkdir -p logs                   # 생성 로그 디렉토리(없으면 docker가 root 소유로 자동생성됨)
-docker compose up -d --build
+GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build   # 커밋을 생성 로그 build.commit 에 남김
 docker compose logs -f          # "준비 완료" 뜨면 OK
 ```
+
+`GIT_COMMIT` 없이 빌드해도 동작합니다. 그때 로그의 `build.commit`은 `unknown`이고, 코드는 `build.code_sha`(`core/*.py` 내용 해시)로 식별합니다.
 
 확인:
 
@@ -114,34 +116,50 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","emb
 
 `docker compose logs -f` 로 실시간 확인.
 
-- 📥 요청 수신(모드 + 큐 N명 대기)
+- 📥 요청 수신(모드 + 요청 id `#xxxxxxxxxxxx` + 큐 N명 대기)
 - 🟢 일반 / 🔵 고급 모드 · 📝 사용자 입력 · ⚙️ 설정(톤/검색범위/온도) · ✨ 최종 태그 · 자연어
-- ❌ 생성 실패(파이프라인 예외/연결끊김 — 콘솔에만, 파일 미기록)
+- ❌ 생성 실패(파이프라인 예외). 파일에도 `status: "error"`로 남습니다.
 - 🔍 파이프라인 검색 / 🔎 직접조회
+- 콘솔의 요청 id 는 파일 로그의 `id`와 같습니다. 콘솔에서 이상한 요청을 보면 id 로 파일 레코드를 찾습니다.
 
 ### 파일 로그 (저장)
 
-생성이 **정상 완료**되면 사용자 입력 / 최종 태그 / 최종 자연어가 파일에 한 줄씩(JSON Lines) 남습니다.
-기본 모드(`/api/generate`)·고급 분할 모드(`/api/generate_split`) 둘 다 기록됩니다.
-(실패·연결끊김 요청은 콘솔에만 남고 파일엔 기록되지 않습니다.)
+생성 요청 1건이 파일에 한 줄(JSON Lines)로 남습니다. 기본 모드(`/api/generate`)·고급 분할 모드(`/api/generate_split`) 둘 다 기록됩니다.
+나중에 같은 조건으로 재현하고, 틀린 태그가 분해·검색·선택 중 어디서 생겼는지 로그만 보고 가를 수 있게 남깁니다.
 
 - 위치: `logs/generations-YYYY-MM-DD.jsonl` (일자별 분리 — 무한 증식 방지).
   - compose 의 `./logs:/app/logs` 볼륨으로 **호스트에 보존**(컨테이너 재시작/재빌드해도 유지).
   - 경로는 `GEN_LOG_PATH` 환경변수로 변경 가능(기본 `/app/logs/generations.jsonl`).
-- 한 줄 포맷:
-  ```json
-  {"ts":"...", "mode":"basic|split", "input":"사용자 입력",
-   "final_tags":["1girl","purple hair",...],
-   "final_tags_str":"1girl, purple hair, ...",
-   "nl_prompt":"최종 자연어", "extra":{...분할모드 원본 구조...}}
-  ```
-- **최종 태그는 언더스코어(`_`)를 공백으로 치환해서 저장합니다**(`purple_hair` → `purple hair`).
-  `final_tags`(배열)·`final_tags_str`(한 줄) 둘 다 치환본. 원본 언더스코어 형태는 별도 보존하지 않습니다.
+- 형식 v2 (2026-11-11부터). v1 키는 이름·의미가 그대로라 기존 분석 스크립트와 아래 `jq` 명령이 그대로 동작합니다.
+
+  | 키 | 내용 |
+  |---|---|
+  | `ts` | 기록 시각. v2부터 UTC 오프셋 포함(`2026-11-11T10:00:00+09:00`) |
+  | `mode` | `basic` \| `split` |
+  | `input` | 사용자 입력. 고급 모드는 사람이 읽기 좋은 요약(`[작품] 이름 - 묘사 / … / 배경: …`) |
+  | `final_tags`, `final_tags_str` | 최종 태그, **언더스코어를 공백으로 치환**(`purple_hair` → `purple hair`) |
+  | `nl_prompt` | 최종 자연어 |
+  | `extra` | (고급 모드) 칸 구조. v1과 같은 형식 |
+  | `v` | 형식 버전 `2`. 없으면 v1 |
+  | `id` | 요청 id(12자리). 콘솔 로그와 같음 |
+  | `status` | `ok` \| `error`(파이프라인 예외) \| `aborted`(연결끊김 등). v1은 `ok`만 기록했음 |
+  | `final_tags_raw` | 최종 태그 원본(언더스코어 그대로) |
+  | `request` | 요청 본문 전체: 톤·검색 범위·자연어 온도, 고급 모드의 `is_original`·`is_passthrough` |
+  | `trace` | 단계별 중간 결과. 기본 모드: 인원수, 뺀 사람 낱말 조각, 조각마다 `ko`/`en`→후보 태그(`cands`)→선택(`picks`), 선택 메모, 환각 제거 태그. 고급 모드: 칸별 결과(이름 매칭 여부 포함), 배경 태그. 실패·중단이면 거기까지 |
+  | `timing_ms` | `queue`(대기), `stages`(차례가 온 뒤 단계별 누적 ms), `total` |
+  | `error` | `{type, message}` (`status: "error"`일 때) |
+  | `build` | `commit`, `code_sha`, `tags_csv`(sha·행 수), `index`, `embed_model`, `llm_model`, `started`(프로세스 시작) |
+
+  한 줄 크기는 약 2~3KB입니다(v1은 약 0.8KB). 하루 수백 건이면 하루 1MB 안팎입니다.
 - 빠른 확인:
   ```bash
   tail -f logs/generations-$(date +%F).jsonl
   # 사람이 읽기 좋게:
   tail -n 20 logs/generations-$(date +%F).jsonl | jq -r '"\(.ts) [\(.mode)] \(.input)\n  → \(.final_tags_str)\n  → \(.nl_prompt)\n"'
+  # 실패·중단만:
+  jq -c 'select(.status != "ok") | {ts, id, status, error, input}' logs/generations-$(date +%F).jsonl
+  # 한 요청의 조각별 후보·선택:
+  cat logs/generations-*.jsonl | jq 'select(.id == "<요청 id>") | .trace.units[] | {ko, en, picks, cands}'
   ```
 - 주의: 단일 워커 전제(append 경합 방지). 워커를 늘리지 마십시오. `.gitignore` 에 `logs/` 가 포함되어
   커밋에는 섞이지 않습니다. 기록 실패는 응답을 막지 않습니다(genlog 가 예외를 삼킵니다) — 로그가 안
