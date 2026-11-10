@@ -44,6 +44,18 @@ p {
   cursor: default;
 }
 
+/* ── 하단 데이터 출처·라이선스 표시 ── */
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  margin-top: var(--gap-2xl);
+  padding-top: var(--gap-lg);
+  border-top: var(--border-width-thin) solid var(--color-border);
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+
 /* ── 2단 그리드 ── */
 .main-grid {
   display: grid;

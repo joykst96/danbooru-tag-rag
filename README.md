@@ -48,6 +48,13 @@ python -m core.builder       # 인덱스 빌드 → data/embeddinggemma-2/lanced
 python -m core.api           # http://localhost:3333
 ```
 
+### 태그 데이터
+
+태그와 한국어 설명은 Hugging Face 데이터셋 [mengod-hf/danbooru-tags-kr](https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr)을 씁니다.
+`python -m core.tags_source`가 고정한 revision을 받아 이 도구의 형식으로 바꾼 `danbooru-tags.csv`를 만듭니다. 이미지 50장 이상인 태그만 남기고, 별칭 표기를 정리합니다. 이 CSV는 저장소에 들어 있지 않습니다.
+
+데이터는 이 저장소의 MIT 라이선스가 아니라 **데이터셋의 라이선스**를 따릅니다. 한국어 번역·분류·설명은 CC BY-SA 4.0이고, 일부 상위 자료는 각자의 조건(MIT 고지 등)을 따릅니다. 만든 CSV를 배포하거나 서비스에서 내려 줄 때는 출처와 변경 사항을 표시하고, 같은 라이선스로 공유해야 합니다. 자세한 내용은 데이터셋의 [LICENSE](https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr/blob/main/LICENSE)를 보세요.
+
 ### 배포
 
 Docker로 배포합니다. 절차는 [DEPLOY.md](DEPLOY.md)에 있습니다.
@@ -95,10 +102,28 @@ python -m core.builder       # index → data/embeddinggemma-2/lancedb_sim (GPU 
 python -m core.api           # http://localhost:3333
 ```
 
+### Tag data
+
+Tags and Korean descriptions come from the Hugging Face dataset [mengod-hf/danbooru-tags-kr](https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr).
+`python -m core.tags_source` downloads a pinned revision and converts it into this tool's `danbooru-tags.csv` (tags with 50+ posts, alias notation normalized). The CSV is not included in this repository.
+
+The data is **not** covered by this repository's MIT license; it follows the dataset's license. The Korean translations, classifications and descriptions are CC BY-SA 4.0, and some upstream material carries its own terms (e.g. MIT notices). If you redistribute the generated CSV or serve it from a deployment, give attribution, indicate changes and share it under the same license. See the dataset's [LICENSE](https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr/blob/main/LICENSE).
+
 ### Deploy
 
 Docker-based; see [DEPLOY.md](DEPLOY.md) (Korean). Internals and data-update procedures are in [MAINTENANCE.md](MAINTENANCE.md) (Korean).
 
-### License
+---
 
-MIT
+## Thanks
+
+- [mengod-hf/danbooru-tags-kr](https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr): 한국어 태그 번역·분류·설명 데이터 / Korean tag translations, classifications and descriptions. 이 데이터셋이 기반한 기여자들께도 감사드립니다 / with thanks to the contributors it builds on: [nyantong](https://github.com/nyantong), [PYU224/tagdb-updater](https://github.com/PYU224/tagdb-updater), [boorutan/booru-japanese-tag](https://github.com/boorutan/booru-japanese-tag), Danbooru wiki contributors.
+- [google/embeddinggemma-2](https://huggingface.co/google/embeddinggemma-2): 임베딩 모델 / embedding model (Apache 2.0)
+- [llama.cpp](https://github.com/ggml-org/llama.cpp): 로컬 LLM 서버 / local LLM server
+- [Danbooru](https://danbooru.donmai.us/): 태그 체계 / the tag vocabulary
+
+## License
+
+코드는 MIT 라이선스입니다([LICENSE](LICENSE)). 태그 데이터와 모델은 각자의 라이선스를 따릅니다(위 "태그 데이터" 참고).
+
+The code is MIT-licensed ([LICENSE](LICENSE)). Tag data and models follow their own licenses (see "Tag data" above).

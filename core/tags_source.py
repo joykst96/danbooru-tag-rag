@@ -1,7 +1,9 @@
 """
 태그 데이터 소스 → danbooru-tags.csv 생성
 
-HF dataset mengod-hf/danbooru-tags-kr (MIT) 의 통합 CSV 를 판(edition)별 revision 고정으로 받아,
+HF dataset mengod-hf/danbooru-tags-kr 의 통합 CSV 를 판(edition)별 revision 고정으로 받아,
+(데이터 라이선스: 한국어 번역·분류·설명은 CC BY-SA 4.0, 일부 상위 자료는 MIT 등 각자의 조건. 데이터셋 LICENSE 참고.
+ 이 파일이 만드는 CSV 는 원본을 고친 2차 저작물이므로 배포할 때 출처·변경 표시와 동일 조건 공유가 필요하다.)
 이 프로젝트가 쓰는 danbooru-tags.csv 를 만든다 (KR2_EDITIONS, 기본 KR2_EDITION).
   - 2026-11-10판 (기본, 2026-11-10 교체): rev aa899ee, danbooru-tags-kr-2026-11-10.csv (152,801행 → post_count>=50 은 118,133개)
   - 2026-11-04판: rev 2f134f2, danbooru-tags-kr-2026-11-04.csv (150,993행 → 116,325개). --edition 2026-11-04 로 계속 만들 수 있다.
