@@ -1,13 +1,17 @@
 services:
   danbooru-rag:
-    build: .
+    build:
+      context: .
+      args:
+        # 생성 로그 build.commit. 배포 시 GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: danbooru-rag
     ports:
       - "3333:3333"
     volumes:
       # 빌드 산출물·모델·CSV·설정은 호스트에서 마운트 (이미지에 안 구움)
-      - ./data:/app/data:ro            # LanceDB 인덱스 (5070에서 빌드해 복사)
-      - ./models:/app/models:ro        # e5-large 모델
+      - ./data:/app/data:ro            # LanceDB 인덱스 (GPU 머신에서 빌드해 복사)
+      - ./models:/app/models:ro        # embeddinggemma-2 (download_model.py)
       - ./danbooru-tags.csv:/app/danbooru-tags.csv:ro
       - ./.env:/app/.env:ro
       - ./logs:/app/logs               # 생성 로그(쓰기 가능, :ro 아님). 호스트에 보존
@@ -16,6 +20,7 @@ services:
       - DATA_DIR=/app/data
       - MODELS_DIR=/app/models
       - GEN_LOG_PATH=/app/logs/generations.jsonl   # 일자별 generations-YYYY-MM-DD.jsonl 로 분리 저장
+      - TZ=${TZ:-Asia/Seoul}                       # 로그 시각·일자 파일 경계의 시간대
       # 컨테이너에서 호스트의 llama.cpp(8080 등) 접근.
       # .env 의 LLM_API_URL 이 우선. host.docker.internal 은 호스트 게이트웨이.
     extra_hosts:

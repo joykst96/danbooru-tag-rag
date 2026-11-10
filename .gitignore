@@ -7,13 +7,10 @@ models/
 data/
 logs/
 
-# 스캔 산출물
+# 스캔·실행 산출물
 *.txt
 *.csv
 *.log
-category_*.txt
-artist_samples.txt
-alias_preview.txt
 
 # 파이썬
 __pycache__/
@@ -27,3 +24,8 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# 로컬 전용 메모·도구 설정 (환경 고유 정보, 공개 안 함)
+*.local.md
+CLAUDE.md
+.claude/

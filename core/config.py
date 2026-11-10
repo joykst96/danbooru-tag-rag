@@ -2,7 +2,7 @@
 설정 모듈
 
 프로젝트 전역 상수를 정의한다.
-경로, 모델, 필터 정책, 임베딩 a/b/c 인덱스 설정을 한곳에 모은다.
+경로, 임베딩 모델(embeddinggemma-2), 필터 정책, 인덱스, LLM 설정을 한곳에 모은다.
 """
 
 import os
@@ -37,31 +37,32 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", PROJECT_ROOT / "logs"))
 # ---------------------------------------------------------------------------
 # 임베딩 모델 설정
 # ---------------------------------------------------------------------------
-# HuggingFace 모델 ID (다운로드 시 사용 / 로컬에 없을 때 폴백)
-EMBEDDING_MODEL_HF_ID = "intfloat/multilingual-e5-large"
-
-# 로컬에 받아둔 모델 폴더명
-EMBEDDING_MODEL_LOCAL_NAME = "multilingual-e5-large"
-
+# google/embeddinggemma-2 (근거·실측: tag-embedding 벤치 README).
+# embeddinggemma-2 설정 (모델 카드 + 벤치 실측으로 확인)
+#   - 텍스트 인코더만 로드(vision/audio 제외 → 270M). float16 금지(NaN), fp32 로 고정.
+#   - 쿼리·문서 모두 내장 프롬프트 SentenceSimilarity ("task: sentence similarity | query: ") — 카드의 대칭 태스크 방식.
+#     문서 텍스트는 "{태그명} {한국어 정의} {한국어 별칭}" (core/parser.build_embed_text).
+#     벤치 비교(2026-11-08): 단일 질의 MRR sim 0.739 / title 형식 0.590 / 검색용 비대칭 0.719 / 정의만 0.661,
+#     서비스 시나리오(조각별 한국어+영어+어휘일치) 후보 회수율 sim 96% / 91% / 94% / 94%.
+#   - max_seq 8192 를 명시해야 함(토크나이저 기본값은 1e30 센티널).
+#   - 빌드 배치는 토큰 예산으로 나눔(기본 예산이면 peak VRAM 19GB).
+GEMMA2_HF_ID = "google/embeddinggemma-2"
+GEMMA2_LOCAL_NAME = "embeddinggemma-2"
+GEMMA2_QUERY_PROMPT = "SentenceSimilarity"
+GEMMA2_PASSAGE_PROMPT = "SentenceSimilarity"
+GEMMA2_CONFIG_KWARGS = {"vision_config": None, "audio_config": None}
+GEMMA2_MAX_SEQ_LENGTH = 8192
+GEMMA2_TOKEN_BUDGET = 32768
 # 실제 로드 경로: 로컬 폴더가 있으면 그걸, 없으면 HF ID로 폴백
 def get_embedding_model_path() -> str:
     """로컬 모델 폴더가 존재하면 그 경로를, 없으면 HF ID 문자열을 반환."""
-    local_path = MODELS_DIR / EMBEDDING_MODEL_LOCAL_NAME
-    if local_path.exists():
-        return str(local_path)
-    return EMBEDDING_MODEL_HF_ID
+    local_path = MODELS_DIR / GEMMA2_LOCAL_NAME
+    return str(local_path) if local_path.exists() else GEMMA2_HF_ID
 
-
-EMBEDDING_DIM = 1024
-MAX_SEQ_LENGTH = 512
 
 # 디바이스: 'cuda' / 'cpu' / None(자동). 환경변수 EMBEDDING_DEVICE로 제어.
-# 테스트 환경(eGPU RTX 4060)에서는 'cuda' 권장 — CPU 대비 임베딩 빌드가 수십 배 빠름.
+# 인덱스 빌드는 'cuda' 권장 — CPU 대비 수십 배 빠름.
 EMBEDDING_DEVICE = os.environ.get("EMBEDDING_DEVICE", None)
-
-# E5 모델 비대칭 프리픽스
-E5_QUERY_PREFIX = "query: "
-E5_PASSAGE_PREFIX = "passage: "
 
 # 임베딩 배치 크기
 EMBED_BATCH_SIZE = 256
@@ -94,22 +95,17 @@ MIN_FREQUENCY = 50
 # ---------------------------------------------------------------------------
 # LanceDB 설정
 # ---------------------------------------------------------------------------
-# 임베딩 텍스트 구성이 다른 3개 인덱스를 만들어 비교한다.
-#   variant A: 영어 태그명 + 한국어 정의 + 별칭  (전부 다 넣기)
-#   variant B: 영어 태그명 + 한국어 별칭          (정의 제외)
-#   variant C: 한국어 정의 + 별칭                  (영어 태그명 제외, 순수 한국어 공간)
-# 비교 축:
-#   A vs B → 정의문의 기여도
-#   A vs C → 영어 태그명의 기여도
-#   B vs C → 영어태그 vs 한국어정의 신호 강도
-# 각 variant 는 별도 LanceDB 디렉토리 + 테이블로 저장되어 독립 비교 가능.
-INDEX_VARIANTS = ("a", "b", "c")
-DEFAULT_VARIANT = "a"
+# 인덱스는 sim 하나.
+#   sim = danbooru-tags.csv(mengod-hf/danbooru-tags-kr 2026-11-10판에서 core/tags_source.py 로 생성)의 태그를
+#         "{태그명} {정의} {별칭}" 으로, 쿼리·문서 모두 SentenceSimilarity 프롬프트를 붙여 임베딩.
+#         (벤치 이름 ns. 이전 커밋의 nt(title 형식)는 단일 질의·영어 질의에서 유의하게 나빠 교체했다.)
+#   태그 118,133개(post_count >= 50, 11-04판은 116,325개). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
+MAIN_VARIANT = "sim"
 
 
 def get_lancedb_path(variant: str) -> Path:
-    """variant('a'|'b')에 해당하는 LanceDB 디렉토리 경로."""
-    return DATA_DIR / f"lancedb_{variant}"
+    """variant 에 해당하는 LanceDB 디렉토리 경로."""
+    return DATA_DIR / GEMMA2_LOCAL_NAME / f"lancedb_{variant}"
 
 
 def get_table_name(variant: str) -> str:
@@ -121,7 +117,6 @@ def get_table_name(variant: str) -> str:
 # 검색 기본값
 # ---------------------------------------------------------------------------
 DEFAULT_TOP_K = 10
-MAX_TOP_K = 100
 # 유사도 임계값 (distance_to_similarity 변환 후 0~1 스케일)
 DEFAULT_THRESHOLD = 0.80
 
@@ -137,3 +132,13 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4")
 LLM_THINKING_ENABLED = os.environ.get("LLM_THINKING", "off").lower() not in (
     "off", "false", "0", "no", ""
 )
+
+# ---------------------------------------------------------------------------
+# 구조화 호출(structured 파이프라인의 분해·선택) 설정
+# ---------------------------------------------------------------------------
+#   temperature 0 + 고정 seed. thinking 은 선택 프롬프트에서 슬롯 컨텍스트(8192)를 다 써 40% 실패 → 항상 off.
+#   프롬프트 캐시(LLM_CACHE_PROMPT, 기본 on): 켜면 호출당 3~5초 빠르고(시스템 프롬프트 재처리 없음),
+#   두 번 실행 결과가 분해 8/10·선택 9/10 동일(채점 점수는 같음). off 면 10/10 동일하지만 느리다.
+#   (실측: gemma4 26B A4B IQ4_XS, 벤치 2026-11-05)
+LLM_SEED = int(os.environ.get("LLM_SEED", "1234"))
+LLM_CACHE_PROMPT = os.environ.get("LLM_CACHE_PROMPT", "on").lower() not in ("off", "false", "0", "no", "")

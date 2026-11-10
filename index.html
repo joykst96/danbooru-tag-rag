@@ -4,1068 +4,114 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Danbooru Prompt Helper</title>
-    <style>
-      :root {
-        --bg: #0f1115;
-        --panel: #181b22;
-        --border: #2a2e38;
-        --text: #e6e8ee;
-        --dim: #8b91a0;
-        --accent: #7aa2f7;
-        --ok: #9ece6a;
-        --err: #f7768e;
-        --warn: #e0af68;
-        /* JS(복사 버튼 강조)에서 참조하는 변수 */
-        --primary: #7aa2f7;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font:
-          14px/1.5 "Segoe UI",
-          "Malgun Gothic",
-          sans-serif;
-      }
-      .wrap {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 24px 16px;
-      }
-      .header h1 {
-        font-size: 20px;
-        margin: 0 0 4px;
-      }
-      .header .subtitle {
-        color: var(--dim);
-        font-size: 13px;
-        margin: 0 0 20px;
-      }
-      .main-grid {
-        display: grid;
-        grid-template-columns: 420px 1fr;
-        gap: 16px;
-        align-items: start;
-      }
-      @media (max-width: 900px) {
-        .main-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      /* PC: 결과 패널이 스크롤을 따라오게 */
-      @media (min-width: 901px) {
-        #result_panel {
-          position: sticky;
-          top: 16px;
-          max-height: calc(100vh - 32px);
-          overflow-y: auto;
-          scrollbar-width: none;
-        }
-        #result_panel::-webkit-scrollbar {
-          display: none;
-        }
-      }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 16px;
-      }
-      label {
-        display: block;
-        font-size: 12px;
-        color: var(--dim);
-        margin: 10px 0 4px;
-      }
-      .form-group:first-child label {
-        margin-top: 0;
-      }
-      textarea,
-      input[type="range"] {
-        width: 100%;
-        background: #11141a;
-        color: var(--text);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 8px 10px;
-        font: inherit;
-      }
-      textarea {
-        resize: vertical;
-        min-height: 120px;
-        scrollbar-width: none;
-      }
-      textarea::-webkit-scrollbar {
-        display: none;
-      }
-      textarea:focus,
-      input[type="text"]:focus {
-        outline: none;
-        border-color: var(--accent);
-      }
-      input[type="text"] {
-        width: 100%;
-        background: #11141a;
-        color: var(--text);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 8px 10px;
-        font: inherit;
-      }
-      /* 슬라이더 */
-      .slider-group {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      input[type="range"] {
-        -webkit-appearance: none;
-        appearance: none;
-        padding: 0;
-        height: 6px;
-        background: #11141a;
-        border: 1px solid var(--border);
-        border-radius: 3px;
-        cursor: pointer;
-      }
-      input[type="range"]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--accent);
-        cursor: pointer;
-        border: 0;
-      }
-      input[type="range"]::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--accent);
-        cursor: pointer;
-        border: 0;
-      }
-      .val-display {
-        flex: 0 0 auto;
-        min-width: 42px;
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-        color: var(--text);
-        font-size: 13px;
-      }
-      /* 체크박스 */
-      .checkbox-container {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 10px;
-      }
-      .checkbox-container input[type="checkbox"]:not(.switch) {
-        width: 15px;
-        height: 15px;
-        accent-color: var(--accent);
-        cursor: pointer;
-      }
-      .checkbox-container label {
-        margin: 0;
-        cursor: pointer;
-        color: var(--text);
-        font-size: 13px;
-      }
-      /* iOS 스타일 스위치 토글 (모든 체크박스 공용) */
-      input.switch {
-        appearance: none;
-        -webkit-appearance: none;
-        box-sizing: border-box;
-        position: relative;
-        width: 38px;
-        height: 22px;
-        flex: 0 0 38px;
-        min-width: 38px;
-        border-radius: 999px;
-        background: var(--border);
-        border: none;
-        cursor: pointer;
-        transition: background 0.2s ease;
-        vertical-align: middle;
-      }
-      input.switch::after {
-        content: "";
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: #fff;
-        transition: transform 0.2s ease;
-      }
-      input.switch:checked {
-        background: var(--primary);
-      }
-      input.switch:checked::after {
-        transform: translateX(16px);
-      }
-      input.switch:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-      input.switch.switch-sm {
-        width: 32px;
-        height: 18px;
-        flex: 0 0 32px;
-        min-width: 32px;
-      }
-      input.switch.switch-sm::after {
-        top: 2px;
-        left: 2px;
-        width: 14px;
-        height: 14px;
-      }
-      input.switch.switch-sm:checked::after {
-        transform: translateX(14px);
-      }
-      /* 모드 토글 + 고급 분할입력 */
-      .mode-btn {
-        flex: 1;
-        padding: 9px 12px;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--dim);
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.15s;
-      }
-      .mode-btn:hover { color: var(--text); }
-      .mode-btn.active {
-        color: var(--bg);
-        background: var(--primary);
-        border-color: var(--primary);
-      }
-      .char-block {
-        position: relative;
-        padding: 14px;
-        margin-bottom: 12px;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-      }
-      .char-block .cb-row {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-      .char-block .cb-field { flex: 1; }
-      .cb-original {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 12px;
-        color: var(--dim);
-        margin-bottom: 12px;
-        padding-right: 30px;   /* 우상단 X 버튼과 겹치지 않게 */
-        cursor: pointer;
-        user-select: none;
-      }
-      .cb-original input { cursor: pointer; }
-      .cat-toggle {
-        padding: 6px 14px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--dim);
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        cursor: pointer;
-        transition: all 0.15s;
-        user-select: none;
-      }
-      .cat-toggle:hover { color: var(--text); border-color: var(--dim); }
-      .cat-toggle.active {
-        color: var(--bg);
-        background: var(--primary);
-        border-color: var(--primary);
-      }
-      /* 자연어 톤 프리셋 버튼 (cat-toggle 스타일 준용) */
-      .tone-group {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 8px;
-      }
-      .tone-btn {
-        padding: 6px 14px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--dim);
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        cursor: pointer;
-        transition: all 0.15s;
-        user-select: none;
-      }
-      .tone-btn:hover { color: var(--text); border-color: var(--dim); }
-      .tone-btn.active {
-        color: var(--bg);
-        background: var(--primary);
-        border-color: var(--primary);
-      }
-      /* 인물칸 출처 3택 세그먼트 */
-      .source-seg {
-        display: flex;
-        gap: 4px;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 3px;
-      }
-      .src-btn {
-        flex: 1;
-        padding: 6px 8px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--dim);
-        background: transparent;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.15s;
-        user-select: none;
-      }
-      .src-btn:hover { color: var(--text); }
-      .src-btn.active {
-        color: var(--bg);
-        background: var(--primary);
-      }
-      /* 고정태그 위치/우선순위용 소형 세그먼트 */
-      .seg {
-        display: inline-flex;
-        gap: 2px;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 2px;
-        vertical-align: middle;
-      }
-      .seg-btn {
-        padding: 3px 10px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--dim);
-        background: transparent;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.12s;
-        user-select: none;
-        white-space: nowrap;
-      }
-      .seg-btn:hover { color: var(--text); }
-      .seg-btn.active { color: var(--bg); background: var(--primary); }
-      /* 고정태그 블록 헤더: 제목 + 컨트롤을 한 줄에 정렬 */
-      .fixed-head {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 6px;
-      }
-      .fixed-head .ft-title { font-size: 12px; font-weight: 600; color: var(--text); }
-      .fixed-head .ft-ctl-label { font-size: 11px; color: var(--dim); font-weight: normal; }
-      .cb-label {
-        display: block;
-        font-size: 11px;
-        color: var(--dim);
-        margin-bottom: 4px;
-      }
-      .cb-input, .cb-textarea {
-        width: 100%;
-        padding: 8px 10px;
-        font-size: 13px;
-        color: var(--text);
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        box-sizing: border-box;
-        font-family: inherit;
-      }
-      .cb-textarea { resize: vertical; line-height: 1.4; }
-      .cb-input:focus, .cb-textarea:focus {
-        outline: none;
-        border-color: var(--primary);
-      }
-      .cb-remove {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 22px;
-        height: 22px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        line-height: 1;
-        font-size: 16px;
-        padding: 0;
-        color: var(--dim);
-        background: transparent;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      .cb-remove:hover { color: var(--err); border-color: var(--err); }
-      .add-char-btn {
-        width: 100%;
-        padding: 9px;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--primary);
-        background: transparent;
-        border: 1px dashed var(--border);
-        border-radius: 8px;
-        cursor: pointer;
-      }
-      .add-char-btn:hover { border-color: var(--primary); }
-      .name-unmatched-note {
-        font-size: 11px;
-        color: var(--warn);
-        margin-top: 2px;
-      }
-      /* 고정 태그 뱃지 (퀄리티/작가) — 색상 토큰 1개로 통일 */
-      .tag.fixed-badge {
-        background: hsla(45, 90%, 55%, 0.14);
-        color: hsl(45, 90%, 68%);
-        border: 1px solid hsla(45, 90%, 55%, 0.45);
-        cursor: default;
-      }
-      .tag.fixed-badge:hover { background: hsla(45, 90%, 55%, 0.14); }
-      /* 패스스루(신규 캐릭터) — 청록 175°. 고정(금 45°)/작품(보라 280°)과 구분. */
-      .tag.passthrough-badge {
-        background: hsla(175, 70%, 45%, 0.14);
-        color: hsl(175, 70%, 60%);
-        border: 1px solid hsla(175, 70%, 45%, 0.45);
-        cursor: default;
-      }
-      .tag.passthrough-badge:hover { background: hsla(175, 70%, 45%, 0.14); }
-      .artist-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-      .artist-row .artist-name { flex: 1; }
-      .artist-row .artist-weight {
-        flex: 0 0 72px;
-        width: 72px;
-        text-align: center;
-      }
-      .artist-row .artist-remove {
-        position: static;
-        flex: 0 0 28px;
-      }
-      /* 생성 버튼 */
-      .btn-generate {
-        width: 100%;
-        margin-top: 16px;
-        padding: 11px;
-        border: 0;
-        border-radius: 8px;
-        background: var(--accent);
-        color: #0b0e14;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-      }
-      .btn-generate:disabled {
-        background: #3a4154;
-        color: #767e92;
-        cursor: not-allowed;
-      }
-      .spinner {
-        display: none;
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(11, 14, 20, 0.3);
-        border-top-color: #0b0e14;
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-      }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      .error-msg {
-        display: none;
-        margin-top: 12px;
-        padding: 8px 10px;
-        border-radius: 6px;
-        background: rgba(247, 118, 142, 0.1);
-        border: 1px solid rgba(247, 118, 142, 0.3);
-        color: var(--err);
-        font-size: 13px;
-      }
-      /* 빈 상태 */
-      .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        min-height: 320px;
-        color: var(--dim);
-        background: var(--panel);
-        border: 1px dashed var(--border);
-        border-radius: 10px;
-        padding: 24px;
-      }
-      .empty-state svg {
-        width: 44px;
-        height: 44px;
-        margin-bottom: 12px;
-        opacity: 0.5;
-      }
-      .empty-state p {
-        margin: 0;
-        font-size: 13px;
-        line-height: 1.7;
-      }
-      /* 결과 컨테이너 */
-      .results-container {
-        display: none;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .result-box {
-        position: relative;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 16px;
-      }
-      .result-box h3 {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--dim);
-        margin: 0 0 12px;
-        font-weight: 600;
-      }
-      /* 태그들 */
-      .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-      .tag {
-        display: inline-block;
-        padding: 6px 12px;
-        background: var(--tag-bg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        font-size: 13px;
-        color: var(--text);
-        cursor: default;
-      }
-      
-      /* 글로벌 JS 툴팁 */
-      .custom-tooltip {
-        position: fixed;
-        background: rgba(11, 14, 20, 0.95);
-        border: 1px solid var(--border);
-        color: var(--text);
-        font-size: 12px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        border-radius: 6px;
-        z-index: 9999;
-        pointer-events: none;
-        width: max-content;
-        max-width: 300px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        word-break: keep-all;
-        padding: 8px 12px;
-        display: none;
-        transition: opacity 0.1s;
-      }
-
-      .tag.candidate {
-        background: transparent;
-        border-color: var(--border);
-        color: var(--dim);
-        border-style: dashed;
-      }
-
-      /* 카테고리별 태그 색상 (candidate보다 뒤에 위치하여 우선순위 확보) */
-      .tag.tag-cat-0 {
-        background: hsla(210, 80%, 60%, 0.12);
-        border-color: hsla(210, 80%, 60%, 0.3);
-        color: hsl(210, 80%, 75%);
-      }
-      .tag.tag-cat-1 {
-        background: hsla(350, 80%, 60%, 0.12);
-        border-color: hsla(350, 80%, 60%, 0.3);
-        color: hsl(350, 80%, 75%);
-      }
-      .tag.tag-cat-3 {
-        background: hsla(280, 70%, 60%, 0.12);
-        border-color: hsla(280, 70%, 60%, 0.3);
-        color: hsl(280, 70%, 75%);
-      }
-      .tag.tag-cat-4 {
-        background: hsla(140, 60%, 50%, 0.12);
-        border-color: hsla(140, 60%, 50%, 0.3);
-        color: hsl(140, 60%, 70%);
-      }
-      .tag.tag-cat-5 {
-        background: hsla(30, 80%, 50%, 0.12);
-        border-color: hsla(30, 80%, 50%, 0.3);
-        color: hsl(30, 80%, 70%);
-      }
-      .tag.deletable {
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-      .tag.deletable:hover {
-        background: rgba(255, 107, 107, 0.15);
-        color: #ff6b6b;
-        border-color: #ff6b6b;
-        text-decoration: line-through;
-      }
-      /* 가중치가 1.0이 아닌 DB 태그 강조(휠로 조절됨) */
-      .tag.db-tag.weighted {
-        border-color: var(--accent);
-        box-shadow: inset 0 0 0 1px var(--accent);
-        font-weight: 600;
-      }
-      /* 단어형+ 뱃지: 키워드 뱃지 스타일(카테고리 색 미적용). 휠 가중치 강조만. */
-      .tag.nl-phrase-badge.weighted {
-        border-color: var(--dim);
-        box-shadow: inset 0 0 0 1px var(--dim);
-        font-weight: 600;
-      }
-      /* 가중치 조절 중에도 삭제 hover와 구분되도록, weighted hover는 line-through 유지 */
-      /* Danbooru 태그 직접 편집 textarea */
-      .final-edit {
-        width: 100%;
-        box-sizing: border-box;
-        margin-top: 12px;
-        padding: 10px 12px;
-        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.5;
-        color: var(--text);
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        resize: vertical;
-        transition: border-color 0.15s;
-      }
-      .final-edit:focus {
-        outline: none;
-        border-color: var(--accent);
-      }
-      .final-edit::placeholder { color: var(--dim); }
-      /* ── 자동완성 드롭다운 ── */
-      .ac-wrap { position: relative; }
-      .ac-dropdown {
-        display: none;
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 100%;
-        margin-top: 4px;
-        z-index: 50;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        max-height: 320px;          /* textarea 가 크므로 더 많은 후보 노출 */
-        overflow-y: auto;
-        scrollbar-width: thin;
-        padding: 4px;
-      }
-      .ac-dropdown::-webkit-scrollbar { width: 8px; }
-      .ac-dropdown::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-      .ac-item {
-        padding: 7px 10px;
-        border-radius: 7px;
-        cursor: pointer;
-        line-height: 1.3;
-      }
-      .ac-item:hover, .ac-item.active { background: rgba(122, 162, 247, 0.16); }
-      .ac-row1 {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 10px;
-      }
-      .ac-item .ac-tag {
-        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-        font-size: 14px;
-        color: var(--text);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .ac-item .ac-count {
-        font-size: 11px;
-        color: var(--dim);
-        flex-shrink: 0;
-      }
-      .ac-row2 {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 3px;
-        min-height: 0;
-      }
-      .ac-row2:empty { display: none; }
-      .ac-badge {
-        font-size: 10px;
-        padding: 1px 7px;
-        border-radius: 999px;
-        flex-shrink: 0;
-        white-space: nowrap;
-      }
-      .ac-badge-cat {
-        background: rgba(122, 162, 247, 0.18);
-        color: var(--accent);
-        border: 1px solid rgba(122, 162, 247, 0.3);
-      }
-      .ac-alias {
-        font-size: 11px;
-        color: var(--dim);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .ac-item mark {
-        background: rgba(122, 162, 247, 0.35);
-        color: var(--text);
-        border-radius: 2px;
-        padding: 0 1px;
-      }
-      /* 인물 그리드 (분할 모드) */
-      .char-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 10px;
-        margin-top: 12px;
-      }
-      .char-card {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 11px 12px;
-      }
-      .char-card.char-card-bg {
-        border-color: var(--accent);
-        border-style: dashed;
-      }
-      .char-card .cc-head {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text);
-        margin-bottom: 8px;
-        line-height: 1.4;
-      }
-      .char-card .cc-series { color: var(--accent); font-weight: 500; }
-      .char-card .cc-miss {
-        display: inline-block;
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--warn);
-        border: 1px solid var(--warn);
-        border-radius: 4px;
-        padding: 0 4px;
-        vertical-align: middle;
-      }
-      .char-card .cc-pass {
-        display: inline-block;
-        font-size: 10px;
-        font-weight: 600;
-        color: hsl(175, 70%, 60%);
-        border: 1px solid hsla(175, 70%, 45%, 0.6);
-        border-radius: 4px;
-        padding: 0 4px;
-        vertical-align: middle;
-        margin-left: 4px;
-      }
-      .char-card .cc-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-      }
-      .char-card .cc-tag {
-        font-size: 11px;
-        color: var(--dim);
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 5px;
-        padding: 1px 6px;
-      }
-      .tag.copyable {
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-      .tag.copyable:hover {
-        background: rgba(88, 166, 255, 0.15);
-        color: #58a6ff;
-        border-color: #58a6ff;
-      }
-
-      .copy-btn {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        width: auto;
-        margin: 0;
-        padding: 4px 12px;
-        font-size: 12px;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        background: #11141a;
-        color: var(--dim);
-        cursor: pointer;
-        transition:
-          border-color 0.12s,
-          color 0.12s;
-      }
-      .copy-btn:hover {
-        border-color: var(--accent);
-        color: var(--text);
-      }
-      .final-prompt {
-        background: #11141a;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 12px;
-        font-size: 13px;
-        line-height: 1.6;
-        color: var(--text);
-        word-break: break-word;
-        white-space: pre-wrap;
-        min-height: 24px;
-      }
-      /* 태그 칩 */
-      .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        align-items: flex-start;
-        align-content: flex-start;
-      }
-      .tag {
-        flex: 0 0 auto;
-        padding: 5px 10px;
-        font-size: 12px;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        background: #11141a;
-        color: var(--text);
-        line-height: 1;
-        display: inline-flex;
-        align-items: center;
-      }
-      .advanced-settings {
-        margin-top: 16px;
-        background: #11141a;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 16px;
-      }
-      .advanced-settings summary {
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 13px;
-        color: var(--text);
-        list-style: none;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        outline: none;
-      }
-      .advanced-settings summary::-webkit-details-marker {
-        display: none;
-      }
-      .advanced-settings summary::before {
-        content: '▶';
-        font-size: 10px;
-        margin-right: 8px;
-        color: var(--dim);
-        transition: transform 0.2s ease;
-      }
-      .advanced-settings[open] summary::before {
-        transform: rotate(90deg);
-      }
-      .advanced-settings .settings-content {
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-      .tag.candidate {
-        color: var(--dim);
-        border-style: dashed;
-      }
-      .tag.deletable {
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-      .tag.deletable:hover {
-        background: rgba(255, 107, 107, 0.15);
-        color: #ff6b6b;
-        border-color: #ff6b6b;
-        text-decoration: line-through;
-      }
-
-      /* 동일 IP 중복요청 거절 모달 */
-      .dup-modal-overlay {
-        position: fixed; inset: 0; z-index: 2000;
-        background: rgba(0, 0, 0, 0.6);
-        display: flex; align-items: center; justify-content: center;
-        padding: 20px;
-      }
-      .dup-modal-box {
-        background: var(--panel); border: 1px solid var(--border);
-        border-radius: 14px; padding: 28px 24px; max-width: 360px; width: 100%;
-        text-align: center; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-      }
-      .dup-modal-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; }
-      .dup-modal-title { margin: 0 0 10px; font-size: 17px; color: var(--text); }
-      .dup-modal-msg { margin: 0 0 6px; font-size: 14px; color: var(--text); line-height: 1.5; }
-      .dup-modal-sub { margin: 0 0 20px; font-size: 12px; color: var(--dim); line-height: 1.5; }
-      .dup-modal-btn {
-        padding: 9px 28px; font-size: 14px; font-weight: 600;
-        color: var(--bg); background: var(--primary); border: none;
-        border-radius: 8px; cursor: pointer;
-      }
-      .dup-modal-btn:hover { opacity: 0.9; }
-    </style>
+    <!-- tokens.css(bundle.mjs 생성)·base.css(복사)는 design-tokens 저장소 파일 그대로 — 직접 고치지 않는다.
+         이 앱의 결정은 app-tokens.css(앱 3층)에, 화면 스타일은 layout·controls·results.css 에 있다. -->
+    <link rel="stylesheet" href="/web/css/tokens.css" />
+    <link rel="stylesheet" href="/web/css/base.css" />
+    <link rel="stylesheet" href="/web/css/app-tokens.css" />
+    <link rel="stylesheet" href="/web/css/layout.css" />
+    <link rel="stylesheet" href="/web/css/controls.css" />
+    <link rel="stylesheet" href="/web/css/results.css" />
+    <script type="module" src="/web/js/main.js"></script>
   </head>
   <body>
     <div class="wrap">
-      <div class="header">
+      <header class="header">
         <h1>Danbooru Prompt Helper</h1>
         <p class="subtitle">
           입력하신 한국어 묘사를 바탕으로 가장 적합한 Danbooru 태그와 자연어 프롬프트를 생성합니다.
         </p>
-        <div style="margin-top: 16px; margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; cursor: default;">
-          <span class="tag tag-cat-0" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">일반태그</span>
-          <span class="tag tag-cat-1" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작가태그</span>
-          <span class="tag tag-cat-3" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">작품태그</span>
-          <span class="tag tag-cat-4" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">캐릭터</span>
-          <span class="tag fixed-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">고정태그</span>
-          <span class="tag passthrough-badge" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">패스스루</span>
-          <span class="tag tag-cat-5" style="padding: 2px 8px; font-size: 11px; border-radius: 4px;">메타태그</span>
+        <div class="legend">
+          <span class="tag tag-cat-0">일반태그</span>
+          <span class="tag tag-cat-1">작가태그</span>
+          <span class="tag tag-cat-3">작품태그</span>
+          <span class="tag tag-cat-4">캐릭터</span>
+          <span class="tag fixed-badge">고정태그</span>
+          <span class="tag passthrough-badge">패스스루</span>
+          <span class="tag tag-cat-5">메타태그</span>
         </div>
-      </div>
+      </header>
 
       <div class="main-grid">
         <!-- 왼쪽 패널: 입력부 -->
-        <div class="panel">
-          <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">LLM 태그 생성 (권장)</h3>
-          <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 16px; line-height: 1.4;">
-            한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.
-          </p>
-          <div class="form-group" style="margin-top: 8px;">
-            <!-- 1. 모드 토글: 기본 / 고급(인물 분할) -->
-            <div id="mode_toggle" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" id="mode_basic_btn" class="mode-btn active" onclick="setMode('basic')">기본</button>
-              <button type="button" id="mode_split_btn" class="mode-btn" onclick="setMode('split')">고급 (인물 분할)</button>
+        <div class="panel input-panel">
+          <div class="section-head">
+            <h2 class="section-title">LLM 태그 생성 (권장)</h2>
+            <p class="help">한국어 묘사를 바탕으로 LLM이 맥락을 파악하여 최적의 Danbooru 태그를 추출합니다.</p>
+          </div>
+
+          <!-- 1. 모드 토글: 기본 / 고급(인물 분할) -->
+          <div id="mode_toggle" class="toggle-row">
+            <button type="button" id="mode_basic_btn" class="mode-btn active">기본</button>
+            <button type="button" id="mode_split_btn" class="mode-btn">고급 (인물 분할)</button>
+          </div>
+
+          <!-- 2. 입력칸 (최상단) -->
+          <div id="basic_input" class="field">
+            <label for="prompt">이미지 묘사 (한국어)</label>
+            <textarea
+              id="prompt"
+              placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
+            ></textarea>
+          </div>
+
+          <div id="split_input" class="stack" hidden>
+            <p class="help-lead">
+              인물마다 칸을 나눠 입력합니다.<br />
+              다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
+              <span class="text-soft">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
+            </p>
+            <div id="char_blocks" class="stack"></div>
+            <button type="button" class="add-char-btn" id="add_char_btn">+ 인물 추가</button>
+            <div class="char-block char-block-bg field">
+              <label class="cb-label" for="bg_desc">배경 / 공통 요소 (한국어)</label>
+              <textarea id="bg_desc" class="cb-textarea" rows="2"
+                placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
             </div>
+          </div>
 
-            <!-- 2. 입력칸 (최상단) -->
-            <div id="basic_input">
-              <label for="prompt">이미지 묘사 (한국어)</label>
-              <textarea
-                id="prompt"
-                placeholder="원하는 이미지를 자세히 묘사해주세요.&#10;(예: 비 내리는 밤거리를 우산을 쓰고 걸어가는 보라색 긴 머리의 고양이 귀 소녀)"
-              ></textarea>
+          <!-- 3. 자연어 톤 (전면 노출) -->
+          <div class="field">
+            <span class="field-label">자연어 톤</span>
+            <div class="chip-group" id="nl_tone_group">
+              <button type="button" class="tone-btn active" data-tone="rich" data-temp="0.4">묘사적</button>
+              <button type="button" class="tone-btn" data-tone="plain" data-temp="0.35">담백</button>
+              <button type="button" class="tone-btn" data-tone="phrase" data-temp="0.25">단어형+</button>
             </div>
+          </div>
 
-            <div id="split_input" style="display:none;">
-              <p style="font-size:12px; color:var(--dim); margin:0 0 14px; line-height:1.7;">
-                인물마다 칸을 나눠 입력합니다.<br />
-                다인물 장면에서 인물이 섞이는 걸 막고, 캐릭터 이름을 살린 자연어 프롬프트를 만듭니다.<br />
-                <span style="opacity:0.8;">작품명·캐릭터명은 비워도 됩니다 (묘사만 입력 가능).</span>
-              </p>
-              <div id="char_blocks"></div>
-              <button type="button" class="add-char-btn" onclick="addCharBlock()">+ 인물 추가</button>
-
-              <div class="char-block" style="margin-top:16px; border-color:var(--accent);">
-                <label class="cb-label">배경 / 공통 요소 (한국어)</label>
-                <textarea id="bg_desc" class="cb-textarea" rows="2"
-                  placeholder="예: 비 내리는 밤거리, 네온사인, 벚꽃잎 흩날림"></textarea>
-              </div>
+          <!-- 4. 태그 검색 범위 (기본 모드 전용 — 고급 모드는 4-step 본선/cat3·4 검색 사용) -->
+          <div id="search_range_section" class="field">
+            <span class="field-label">태그 검색 범위</span>
+            <div id="search_pool_categories" class="chip-group">
+              <button type="button" class="cat-toggle active" data-pool="0">일반</button>
+              <button type="button" class="cat-toggle" data-pool="1">작가</button>
+              <button type="button" class="cat-toggle" data-pool="3">작품</button>
+              <button type="button" class="cat-toggle" data-pool="4">캐릭터</button>
+              <button type="button" class="cat-toggle" data-pool="5">메타</button>
             </div>
+            <p class="help text-warning">
+              ※ 어느 종류의 태그를 검색할지 고릅니다. 일반 외 카테고리를 넣으면 출력 태그 품질이 떨어질 수 있습니다.
+            </p>
+          </div>
 
-            <!-- 3. 자연어 톤 (전면 노출) -->
-            <label style="margin-top: 20px; display:block;">자연어 톤</label>
-            <div class="tone-group" id="nl_tone_group">
-              <button type="button" class="tone-btn active" data-tone="rich" data-temp="0.4" onclick="setNlTone('rich')">묘사적</button>
-              <button type="button" class="tone-btn" data-tone="plain" data-temp="0.35" onclick="setNlTone('plain')">담백</button>
-              <button type="button" class="tone-btn" data-tone="phrase" data-temp="0.25" onclick="setNlTone('phrase')">단어형+</button>
-            </div>
-
-            <!-- 4. 태그 검색 범위 (기본 모드 전용 — 고급 모드는 4-step 본선/cat3·4 검색 사용) -->
-            <div id="search_range_section">
-              <label style="margin-top: 20px; display:block;">태그 검색 범위</label>
-              <div id="search_pool_categories" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
-                <button type="button" class="cat-toggle active" data-pool="0" onclick="togglePoolCat(this)">일반</button>
-                <button type="button" class="cat-toggle" data-pool="1" onclick="togglePoolCat(this)">작가</button>
-                <button type="button" class="cat-toggle" data-pool="3" onclick="togglePoolCat(this)">작품</button>
-                <button type="button" class="cat-toggle" data-pool="4" onclick="togglePoolCat(this)">캐릭터</button>
-                <button type="button" class="cat-toggle" data-pool="5" onclick="togglePoolCat(this)">메타</button>
-              </div>
-              <p style="font-size: 11px; color: var(--warn); margin-top: 4px; line-height: 1.4;">
-                ※ 어느 종류의 태그를 검색할지 고릅니다. 일반 외 카테고리를 넣으면 출력 태그 품질이 떨어질 수 있습니다.
-              </p>
-            </div>
-
-            <!-- 5. 출력 형식 옵션 -->
-            <div class="checkbox-container" style="margin-top:16px;">
-              <input
-                type="checkbox"
-                class="switch"
-                id="replace_underscores"
-                onchange="updatePromptDisplay()"
-              />
-              <label for="replace_underscores"
-                >언더스코어(_)를 공백으로 치환</label
-              >
+          <!-- 5. 출력 형식 옵션 -->
+          <div class="option-list">
+            <div class="checkbox-container">
+              <input type="checkbox" class="switch" id="replace_underscores" />
+              <label for="replace_underscores">언더스코어(_)를 공백으로 치환</label>
             </div>
             <div class="checkbox-container">
-              <input
-                type="checkbox"
-                class="switch"
-                id="escape_parentheses"
-                onchange="updatePromptDisplay()"
-              />
-              <label for="escape_parentheses"
-                >소괄호 '()' 이스케이프 '\(\)' 처리</label
-              >
+              <input type="checkbox" class="switch" id="escape_parentheses" />
+              <label for="escape_parentheses">소괄호 '()' 이스케이프 '\(\)' 처리</label>
             </div>
-            <div class="checkbox-container" style="align-items:center; gap:10px;">
-              <label style="font-size:13px;">가중치 표기</label>
-              <span class="seg" id="weight_syntax_group" style="margin-top:0;">
-                <button type="button" class="seg-btn active" data-syntax="local" onclick="setWeightSyntax(this)">로컬</button>
-                <button type="button" class="seg-btn" data-syntax="nai" onclick="setWeightSyntax(this)">NAI</button>
+            <div class="checkbox-container">
+              <span class="option-label">가중치 표기</span>
+              <span class="seg" id="weight_syntax_group">
+                <button type="button" class="seg-btn active" data-syntax="local">로컬</button>
+                <button type="button" class="seg-btn" data-syntax="nai">NAI</button>
               </span>
-              <span style="font-size:11px; color:var(--dim);">로컬 <code>(tag:1.2)</code> · NAI <code>1.2::tag::</code></span>
+              <span class="help">로컬 <code>(tag:1.2)</code> · NAI <code>1.2::tag::</code></span>
             </div>
           </div>
 
@@ -1073,48 +119,47 @@
           <details class="advanced-settings">
             <summary>고정 태그 (Danbooru 태그 앞뒤 고정)</summary>
             <div class="settings-content">
-              <p style="font-size:12px; color:var(--dim); margin:0 0 12px; line-height:1.6;">
+              <p class="help-lead">
                 LLM·DB를 거치지 않고 결과 태그 앞(퀄리티)·뒤(작가)에 그대로 붙습니다.<br />
                 쉼표로 구분해 여러 개 입력할 수 있습니다.<br />
-                <span style="color:var(--warn);">※ 고정 태그는 언더스코어 치환·괄호 이스케이프가 적용되지 않고 입력 그대로 출력됩니다.</span>
+                <span class="text-warning">※ 고정 태그는 언더스코어 치환·괄호 이스케이프가 적용되지 않고 입력 그대로 출력됩니다.</span>
               </p>
-              <div style="margin-bottom: 16px;">
+              <div class="fixed-group">
                 <div class="fixed-head">
                   <span class="ft-title">퀄리티 태그</span>
                   <span class="ft-ctl-label">위치</span>
                   <span class="seg" id="quality_pos_group">
-                    <button type="button" class="seg-btn active" data-pos="front" onclick="setFixedPos('quality', this)">맨앞</button>
-                    <button type="button" class="seg-btn" data-pos="back" onclick="setFixedPos('quality', this)">맨뒤</button>
+                    <button type="button" class="seg-btn active" data-pos="front">맨앞</button>
+                    <button type="button" class="seg-btn" data-pos="back">맨뒤</button>
                   </span>
                 </div>
                 <input type="text" id="fixed_quality" class="cb-input"
-                  placeholder="예: masterpiece, best quality, amazing quality"
-                  oninput="onQualityInput()" />
-                <div class="tag-list" id="quality_badges" style="margin-top:8px;"></div>
+                  placeholder="예: masterpiece, best quality, amazing quality" />
+                <div class="tag-list" id="quality_badges"></div>
               </div>
-              <div style="margin-bottom: 14px;">
+              <div class="fixed-group">
                 <div class="fixed-head">
                   <span class="ft-title">작가 태그</span>
                   <span class="ft-ctl-label">위치</span>
                   <span class="seg" id="artist_pos_group">
-                    <button type="button" class="seg-btn" data-pos="front" onclick="setFixedPos('artist', this)">맨앞</button>
-                    <button type="button" class="seg-btn active" data-pos="back" onclick="setFixedPos('artist', this)">맨뒤</button>
+                    <button type="button" class="seg-btn" data-pos="front">맨앞</button>
+                    <button type="button" class="seg-btn active" data-pos="back">맨뒤</button>
                   </span>
                   <span class="ft-ctl-label">접두사</span>
                   <span class="seg" id="artist_prefix_group">
-                    <button type="button" class="seg-btn active" data-prefix="" onclick="setArtistPrefix(this)">없음</button>
-                    <button type="button" class="seg-btn" data-prefix="@" onclick="setArtistPrefix(this)">@</button>
-                    <button type="button" class="seg-btn" data-prefix="artist:" onclick="setArtistPrefix(this)">artist:</button>
+                    <button type="button" class="seg-btn active" data-prefix="">없음</button>
+                    <button type="button" class="seg-btn" data-prefix="@">@</button>
+                    <button type="button" class="seg-btn" data-prefix="artist:">artist:</button>
                   </span>
                 </div>
-                <div id="artist_rows"></div>
-                <button type="button" class="add-char-btn" style="margin-top:8px;" onclick="addArtistRow()">+ 작가 추가</button>
+                <div id="artist_rows" class="stack-sm"></div>
+                <button type="button" class="add-char-btn" id="add_artist_btn">+ 작가 추가</button>
               </div>
-              <div class="fixed-head" style="margin-bottom:0;">
+              <div class="fixed-head">
                 <span class="ft-ctl-label">두 태그가 같은 위치일 때 순서</span>
                 <span class="seg" id="fixed_priority_group">
-                  <button type="button" class="seg-btn active" data-priority="quality" onclick="setFixedPriority(this)">퀄리티 먼저</button>
-                  <button type="button" class="seg-btn" data-priority="artist" onclick="setFixedPriority(this)">작가 먼저</button>
+                  <button type="button" class="seg-btn active" data-priority="quality">퀄리티 먼저</button>
+                  <button type="button" class="seg-btn" data-priority="artist">작가 먼저</button>
                 </span>
               </div>
             </div>
@@ -1123,106 +168,82 @@
           <details class="advanced-settings">
             <summary>온도 미세조정 (고급)</summary>
             <div class="settings-content">
-              <div class="form-group">
-                <label for="threshold">검색 유사도 기준 (Threshold)</label>
-                <div class="slider-group">
-                  <input type="range" id="threshold" min="0.5" max="1.0" step="0.01" value="0.80" />
-                  <span class="val-display" id="threshold_val">0.80</span>
-                </div>
-              </div>
-
-              <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
-
-              <div style="margin-bottom: -4px;">
-                <h4 style="margin: 0 0 4px 0; font-size: 13px; color: var(--text);">온도 (Temperature) 설정</h4>
-                <p style="font-size: 11px; color: var(--dim); margin: 0; line-height: 1.4;">
+              <div class="section-head">
+                <h3 class="sub-title">자연어 생성기 온도 (Temperature)</h3>
+                <p class="help">
                   낮을수록 기계적으로 변수 없이 주어진 일을 하고, 높을수록 창의성이 늘어납니다.<br/>
-                  (너무 높으면 미친 소리를 하기 시작합니다.)
+                  (너무 높으면 미친 소리를 하기 시작합니다.) 태그 분해·선택 단계는 항상 0으로 고정됩니다.
                 </p>
               </div>
 
-              <div class="form-group">
-                <label for="kw_temp">전처리기 온도 - 권장: 0.1</label>
-                <div class="slider-group">
-                  <input type="range" id="kw_temp" min="0.0" max="1.5" step="0.1" value="0.1" />
-                  <span class="val-display" id="kw_temp_val">0.1</span>
-                </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
-                  <span style="color: #ff6b6b;"><b>※ 전처리기는 0.1을 강력히 추천합니다.</b></span><br/>
-                  온도를 높이면 사용자의 원래 입력을 무시하고 엉뚱한 키워드를 뽑아내어 <b>의도를 왜곡할 위험</b>이 커집니다.
-                </p>
-              </div>
-
-              <div class="form-group">
-                <label for="nl_temp">자연어 생성기 온도 - 권장: 0.4</label>
+              <div class="field">
+                <label for="nl_temp">온도 (톤별 권장: 묘사적 0.4 · 담백 0.35 · 단어형+ 0.25)</label>
                 <div class="slider-group">
                   <input type="range" id="nl_temp" min="0.0" max="1.5" step="0.1" value="0.4" />
                   <span class="val-display" id="nl_temp_val">0.4</span>
                 </div>
-                <p style="font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4;">
+                <p class="help">
                   자연어 프롬프트를 얼마나 창의적이고 다채롭게 묘사할지 결정합니다.<br/>
                   낮추면 딱딱해지고 높이면 풍부해지지만, 과하면 묘사가 엇나갈 수 있습니다.<br/>
-                  <span style="opacity:0.8;">위에서 톤을 고르면 이 값이 권장값으로 맞춰집니다.</span>
+                  <span class="text-soft">위에서 톤을 고르면 이 값이 권장값으로 맞춰집니다.</span>
                 </p>
               </div>
             </div>
           </details>
 
-          <button
-            class="btn-generate"
-            id="generate_btn"
-            onclick="generateTags()"
-          >
+          <button type="button" class="btn-generate" id="generate_btn">
             <span>태그 생성하기</span>
-            <div class="spinner" id="spinner"></div>
+            <div class="spinner" id="spinner" hidden></div>
           </button>
 
-          <div class="error-msg" id="error_msg"></div>
-          
-          <hr style="border: 0; border-top: 1px solid var(--border); margin: 32px 0 24px 0;" />
-          
-          <div class="form-group">
-            <h3 style="margin: 0 0 12px 0; font-size: 15px; color: var(--primary);">벡터DB 단일태그 직접조회</h3>
-            <p style="font-size: 11px; color: var(--dim); margin-top: 0; margin-bottom: 12px; line-height: 1.4;">
-              LLM 전처리를 거치지 않고 입력한 단일 단어 그대로 벡터 DB를 검색하여 유사한 태그를 찾습니다.
-            </p>
+          <div class="error-msg" id="error_msg" hidden></div>
+
+          <hr class="divider divider-section" />
+
+          <!-- 벡터DB 단일태그 직접조회 -->
+          <section class="direct-section">
+            <div class="section-head">
+              <h2 class="section-title">벡터DB 단일태그 직접조회</h2>
+              <p class="help">LLM 전처리를 거치지 않고 입력한 단일 단어 그대로 벡터 DB를 검색하여 유사한 태그를 찾습니다.</p>
+            </div>
             <input type="text" id="direct_query" placeholder="조회할 단어를 입력하세요 (예: 1girl)" />
-            
-            <label for="direct_threshold">유사도 임계값 - 권장: 0.60</label>
-            <div class="slider-group" style="margin-bottom: 16px;">
-              <input type="range" id="direct_threshold" min="0.3" max="1.0" step="0.01" value="0.60" oninput="document.getElementById('direct_threshold_val').textContent = parseFloat(this.value).toFixed(2);" />
-              <span class="val-display" id="direct_threshold_val">0.60</span>
+
+            <div class="field">
+              <label for="direct_threshold">유사도 임계값 - 권장: 0.60</label>
+              <div class="slider-group">
+                <input type="range" id="direct_threshold" min="0.3" max="1.0" step="0.01" value="0.60" />
+                <span class="val-display" id="direct_threshold_val">0.60</span>
+              </div>
             </div>
 
-            <label class="cb-label" style="margin-bottom:6px;">카테고리 (중복 선택 가능 · 미선택 = 전체)</label>
-            <div id="direct_categories" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
-              <button type="button" class="cat-toggle" data-cat="0" onclick="toggleCat(this)">일반</button>
-              <button type="button" class="cat-toggle" data-cat="1" onclick="toggleCat(this)">작가</button>
-              <button type="button" class="cat-toggle" data-cat="3" onclick="toggleCat(this)">작품</button>
-              <button type="button" class="cat-toggle" data-cat="4" onclick="toggleCat(this)">캐릭터</button>
-              <button type="button" class="cat-toggle" data-cat="5" onclick="toggleCat(this)">메타</button>
+            <div class="field">
+              <span class="cb-label">카테고리 (중복 선택 가능 · 미선택 = 전체)</span>
+              <div id="direct_categories" class="chip-group">
+                <button type="button" class="cat-toggle" data-cat="0">일반</button>
+                <button type="button" class="cat-toggle" data-cat="1">작가</button>
+                <button type="button" class="cat-toggle" data-cat="3">작품</button>
+                <button type="button" class="cat-toggle" data-cat="4">캐릭터</button>
+                <button type="button" class="cat-toggle" data-cat="5">메타</button>
+              </div>
             </div>
 
-            <label class="cb-label" style="margin-bottom:6px;">태그 클릭 동작</label>
-            <div id="direct_click_mode" style="display:flex; gap:8px; margin-bottom:16px;">
-              <button type="button" class="mode-btn active" data-clickmode="copy" onclick="setDirectClickMode('copy')">복사</button>
-              <button type="button" class="mode-btn" data-clickmode="danbooru" onclick="setDirectClickMode('danbooru')">Danbooru 열기</button>
+            <div class="field">
+              <span class="cb-label">태그 클릭 동작</span>
+              <div id="direct_click_mode" class="toggle-row">
+                <button type="button" class="mode-btn active" data-clickmode="copy">복사</button>
+                <button type="button" class="mode-btn" data-clickmode="danbooru">Danbooru 열기</button>
+              </div>
             </div>
-            
-            <button
-              class="btn-generate"
-              id="direct_search_btn"
-              onclick="searchDirectDB()"
-              style="background: #2a2e38; border-color: var(--border); color: var(--text); margin-top: 0;"
-            >
+
+            <button type="button" class="btn-generate btn-secondary" id="direct_search_btn">
               <span>조회하기</span>
-              <div class="spinner" id="direct_spinner" style="border-top-color: var(--text);"></div>
+              <div class="spinner" id="direct_spinner" hidden></div>
             </button>
-            
-            <div class="error-msg" id="direct_error_msg"></div>
-            
-            <div class="tag-list" id="res_direct_db" style="margin-top: 16px; display: none;"></div>
-          </div>
+
+            <div class="error-msg" id="direct_error_msg" hidden></div>
+
+            <div class="tag-list" id="res_direct_db" hidden></div>
+          </section>
         </div>
 
         <!-- 오른쪽 패널: 결과부 -->
@@ -1245,36 +266,29 @@
               한국어 묘사를 입력하고 생성 버튼을 누르면<br />여기에 결과가
               표시됩니다.
             </p>
-            <p id="queue_msg" style="display:none; font-size:16px; color:var(--primary,#6e8efb); font-weight:600; margin-top:8px;"></p>
+            <p id="queue_msg" class="queue-msg" hidden></p>
           </div>
 
-          <div class="results-container" id="results_container">
+          <div class="results-container" id="results_container" hidden>
             <!-- Danbooru태그 박스 (핵심 결과, 최상단) -->
             <div class="result-box" id="final_prompt_box">
               <h3>Danbooru태그</h3>
-              <button
-                class="copy-btn"
-                onclick="copyToClipboard('res_final_prompt')"
-              >
-                복사하기
-              </button>
+              <button type="button" class="copy-btn" data-copy="res_final_prompt">복사하기</button>
               <div class="ac-wrap">
                 <textarea
                   id="final_prompt_edit"
                   class="final-edit"
                   rows="3"
                   placeholder="Danbooru 태그 (쉼표로 구분). 직접 수정하면 아래 뱃지에 반영됩니다. (고정태그 제외)"
-                  oninput="onFinalEditInput()"
-                  onblur="onFinalEditBlur()"
                   autocomplete="off"
                 ></textarea>
                 <div id="ac_dropdown" class="ac-dropdown"></div>
               </div>
-              <div class="tag-list" id="res_final_prompt" style="margin-top: 12px; min-height: 54px;"></div>
+              <div class="tag-list final-tags" id="res_final_prompt"></div>
             </div>
 
             <!-- 인물 그리드 (분할 모드 전용) -->
-            <div class="result-box" id="char_grid_box" style="display:none;">
+            <div class="result-box" id="char_grid_box" hidden>
               <h3>인물 구성</h3>
               <div id="res_char_grid" class="char-grid"></div>
             </div>
@@ -1282,12 +296,10 @@
             <!-- 자연어 프롬프트 박스 (보조용) -->
             <div class="result-box" id="nl_prompt_box">
               <h3>자연어 프롬프트 (보조용)</h3>
-              <button class="copy-btn" onclick="copyToClipboard('res_nl_prompt')">
-                복사하기
-              </button>
+              <button type="button" class="copy-btn" data-copy="res_nl_prompt">복사하기</button>
               <div class="final-prompt" id="res_nl_prompt"></div>
-              <div id="unmatched_note" style="display:none; margin-top:8px;"></div>
-              <button class="btn-generate" id="copy_all_btn" onclick="copyAll()" style="margin-top: 12px; padding: 8px; font-size: 13px; background: #2a2e38; color: var(--text);">
+              <div id="unmatched_note" hidden></div>
+              <button type="button" class="btn-generate btn-secondary btn-compact" id="copy_all_btn">
                 모두 복사하기 (단보루 태그 + 자연어)
               </button>
             </div>
@@ -1295,1573 +307,47 @@
             <!-- 키워드 박스 -->
             <div class="result-box" id="keywords_box">
               <h3>추출된 핵심 키워드</h3>
-              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">한국어</div>
-              <div class="tag-list" id="res_keywords_ko"></div>
-              <div style="border-top: 1px solid var(--border, #333); margin: 10px 0;"></div>
-              <div style="font-size: 12px; color: var(--text-dim, #888); margin: 4px 0 2px;">영어 (번역)</div>
-              <div class="tag-list" id="res_keywords_en"></div>
+              <div class="keyword-group">
+                <div class="keyword-label">한국어</div>
+                <div class="tag-list" id="res_keywords_ko"></div>
+              </div>
+              <hr class="divider" />
+              <div class="keyword-group">
+                <div class="keyword-label">영어 (번역)</div>
+                <div class="tag-list" id="res_keywords_en"></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- 데이터 출처·라이선스 표시 (태그 데이터는 CC BY-SA 4.0: 출처·변경 표시와 동일 조건 공유가 필요) -->
+      <footer class="site-footer">
+        <p>
+          태그 데이터:
+          <a href="https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr" target="_blank" rel="noopener">mengod-hf/danbooru-tags-kr</a>
+          — 한국어 번역·분류·설명은
+          <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.ko" target="_blank" rel="noopener">CC BY-SA 4.0</a>,
+          일부 상위 자료는 각자의 조건을 따릅니다(<a href="https://huggingface.co/datasets/mengod-hf/danbooru-tags-kr/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>).
+        </p>
+        <p>
+          이 서비스는 원본에서 이미지 50장 이상인 태그만 추리고 별칭 표기를 정리해 씁니다. 수정한 태그 데이터(<a href="/danbooru-tags.csv">danbooru-tags.csv</a>)도 같은 CC BY-SA 4.0 조건으로 공유합니다.
+        </p>
+        <p>
+          임베딩 모델:
+          <a href="https://huggingface.co/google/embeddinggemma-2" target="_blank" rel="noopener">google/embeddinggemma-2</a> (Apache 2.0)
+        </p>
+      </footer>
     </div>
 
-    <script>
-      let currentResultData = null;
-      let lastDirectDBResults = null;
-      let tagInfo = new Map();
-
-      // ── 입력 모드 (기본 한문장 / 고급 인물분할) ──
-      let currentMode = "basic";
-      let currentNlTone = "rich";   // 자연어 톤 프리셋 (rich/plain)
-      // 단어형+(phrase) 뱃지의 현재 가중치 문자열. danbooru final_prompt 와 분리해
-      // NL 박스만 갱신한다(서로 오염 방지). 빈 문자열이면 뱃지 모드 아님.
-      let currentNlPhraseString = "";
-      // 작가 태그 접두사: "" (없음) / "@" / "artist:"
-      let currentArtistPrefix = "";
-      function setArtistPrefix(btn) {
-        currentArtistPrefix = btn.dataset.prefix;
-        document.querySelectorAll("#artist_prefix_group .seg-btn").forEach((b) => {
-          b.classList.toggle("active", b === btn);
-        });
-        refreshFixedTags();
-      }
-      // 고정태그 위치(앞/뒤) + 우선순위. 기본: 퀄리티=앞, 작가=뒤, 우선순위=퀄리티.
-      let fixedPos = { quality: "front", artist: "back" };
-      let fixedPriority = "quality";   // 같은 위치일 때 누가 먼저 ("quality"/"artist")
-      function setFixedPos(which, btn) {
-        fixedPos[which] = btn.dataset.pos;
-        const grp = which === "quality" ? "#quality_pos_group" : "#artist_pos_group";
-        document.querySelectorAll(grp + " .seg-btn").forEach((b) => {
-          b.classList.toggle("active", b === btn);
-        });
-        refreshFixedTags();
-      }
-      function setFixedPriority(btn) {
-        fixedPriority = btn.dataset.priority;
-        document.querySelectorAll("#fixed_priority_group .seg-btn").forEach((b) => {
-          b.classList.toggle("active", b === btn);
-        });
-        refreshFixedTags();
-      }
-      // 가중치 표기: "local" => (tag:weight) / "nai" => weight::tag::
-      // 내부 상태(final_prompt, currentNlPhraseString)는 항상 로컬 표기로 저장하고,
-      // 표시/복사 시 formatTagWeight 에서만 변환한다(단일 진실원천).
-      let currentWeightSyntax = "local";
-      function setWeightSyntax(btn) {
-        currentWeightSyntax = btn.dataset.syntax;
-        document.querySelectorAll("#weight_syntax_group .seg-btn").forEach((b) => {
-          b.classList.toggle("active", b === btn);
-        });
-        // 작가 weight 입력 하한도 표기에 맞춰 조정(NAI 음수 허용)
-        document.querySelectorAll("#artist_rows .artist-weight").forEach((inp) => {
-          inp.min = (currentWeightSyntax === "nai") ? "-10" : "0";
-        });
-        renderQualityBadges();   // 퀄리티 뱃지 표기 갱신
-        if (currentResultData && currentResultData.final_prompt) displayResults();
-        else if (currentNlPhraseString) renderNlPhraseBadges(currentNlPhraseString);
-      }
-      // 현재 표기의 가중치 하한(휠/입력 클램프용). NAI 는 음수 정식 지원.
-      function weightFloor() {
-        return (currentWeightSyntax === "nai") ? -10 : 0.1;
-      }      let charBlockSeq = 0;
-
-      // ── 직접조회 태그 클릭 동작 (copy / danbooru) ──
-      let directClickMode = "copy";
-      // ── 태그 검색 범위 (카테고리 다중선택, 전면 노출) ──
-      function togglePoolCat(btn) {
-        btn.classList.toggle("active");
-      }
-      // 현재 선택된 검색 범위 카테고리. 활성 버튼 수집.
-      // 아무것도 안 켜져 있으면 null(=백엔드에서 일반 cat0 폴백).
-      function getSearchPoolCategories() {
-        const cats = Array.from(
-          document.querySelectorAll("#search_pool_categories .cat-toggle.active")
-        ).map((b) => parseInt(b.dataset.pool, 10));
-        return cats.length ? cats : null;
-      }
-
-      function toggleCat(btn) {
-        btn.classList.toggle("active");
-      }
-
-      function setDirectClickMode(mode) {
-        directClickMode = mode;
-        document.querySelectorAll("#direct_click_mode .mode-btn").forEach((b) => {
-          b.classList.toggle("active", b.dataset.clickmode === mode);
-        });
-        if (lastDirectDBResults) renderDirectDBResults(); // 이미 뜬 결과의 클릭 동작 갱신
-      }
-
-      function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, (c) => (
-          { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-        ));
-      }
-
-      // 자연어 톤 프리셋 선택. 톤을 고르면 nl_temp 슬라이더를 그 톤의 권장온도로
-      // 점프시킨다(프리셋 동작). 이후 사용자가 슬라이더로 미세조정 가능.
-      function setNlTone(tone) {
-        currentNlTone = tone;
-        document.querySelectorAll("#nl_tone_group .tone-btn").forEach((b) => {
-          const on = b.dataset.tone === tone;
-          b.classList.toggle("active", on);
-          if (on) {
-            // 권장온도로 슬라이더/표시값 동기화
-            const t = b.dataset.temp;
-            const slider = document.getElementById("nl_temp");
-            const valEl = document.getElementById("nl_temp_val");
-            if (slider) slider.value = t;
-            if (valEl) valEl.textContent = t;
-          }
-        });
-      }
-
-      function setMode(mode) {
-        currentMode = mode;
-        const isSplit = mode === "split";
-        document.getElementById("basic_input").style.display = isSplit ? "none" : "block";
-        document.getElementById("split_input").style.display = isSplit ? "block" : "none";
-        document.getElementById("mode_basic_btn").classList.toggle("active", !isSplit);
-        document.getElementById("mode_split_btn").classList.toggle("active", isSplit);
-        // 검색 범위는 기본 모드 전용(고급 모드는 백엔드가 4-step 본선/cat3·4 검색 사용).
-        const srs = document.getElementById("search_range_section");
-        if (srs) srs.style.display = isSplit ? "none" : "block";
-        // 고급 모드 첫 진입 시 인물칸 1개 자동 생성
-        if (isSplit && document.querySelectorAll("#char_blocks .char-block").length === 0) {
-          addCharBlock();
-        }
-      }
-
-      function addCharBlock() {
-        charBlockSeq += 1;
-        const n = charBlockSeq;
-        const div = document.createElement("div");
-        div.className = "char-block";
-        div.dataset.idx = n;
-        div.innerHTML = `
-          <button type="button" class="cb-remove" title="삭제" onclick="removeCharBlock(${n})">×</button>
-          <label class="cb-label">캐릭터 출처</label>
-          <div class="source-seg" data-source="db">
-            <button type="button" class="src-btn active" data-src="db" onclick="setCharSource(this,'db')">DB에서 찾기</button>
-            <button type="button" class="src-btn" data-src="passthrough" onclick="setCharSource(this,'passthrough')">DB에 없는 캐릭터</button>
-            <button type="button" class="src-btn" data-src="original" onclick="setCharSource(this,'original')">오리지널</button>
-          </div>
-          <p class="src-hint" style="font-size:11px; color:var(--dim); margin:6px 0 12px; line-height:1.5;">DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.</p>
-          <div class="cb-row">
-            <div class="cb-field">
-              <label class="cb-label">작품명 (옵션)</label>
-              <input type="text" class="cb-input cb-series" placeholder="예: 원신 / Genshin Impact" />
-            </div>
-            <div class="cb-field">
-              <label class="cb-label">캐릭터명 (옵션)</label>
-              <input type="text" class="cb-input cb-name" placeholder="예: raiden shogun / 임시이름" />
-            </div>
-          </div>
-          <label class="cb-label">캐릭터 묘사 (한국어)</label>
-          <textarea class="cb-textarea cb-desc" rows="2" placeholder="예: 은발, 보라눈, 보라색 기모노, 우산을 든 포즈"></textarea>
-        `;
-        document.getElementById("char_blocks").appendChild(div);
-      }
-
-      // 캐릭터 출처 3택: db(기본) / passthrough(신규) / original(오리지널).
-      // 기존 is_original/is_passthrough 불리언을 이 단일 상태에서 payload 수집 시 파생한다.
-      const _SRC_HINT = {
-        db: "DB에 등록된 캐릭터를 검색해 태그를 가져옵니다.",
-        passthrough: "DB에 없는 신규 캐릭터입니다. 입력한 이름을 그대로 자연어와 태그 맨 앞에 사용합니다.",
-        original: "오리지널 캐릭터입니다. 작품/캐릭터명 없이 묘사만 쓰며, 이름은 자동 생성됩니다.",
-      };
-      function setCharSource(btn, src) {
-        const block = btn.closest(".char-block");
-        const seg = block.querySelector(".source-seg");
-        seg.dataset.source = src;
-        seg.querySelectorAll(".src-btn").forEach((b) => {
-          b.classList.toggle("active", b.dataset.src === src);
-        });
-        const hint = block.querySelector(".src-hint");
-        if (hint) hint.textContent = _SRC_HINT[src] || "";
-        const series = block.querySelector(".cb-series");
-        const name = block.querySelector(".cb-name");
-        // 오리지널: 작품/캐릭터명 비활성+비움(이름 자동 생성). db/passthrough: 입력 살림.
-        const lock = src === "original";
-        [series, name].forEach((el) => {
-          el.disabled = lock;
-          if (lock) el.value = "";
-          el.style.opacity = lock ? "0.4" : "1";
-        });
-        // passthrough 는 시각적으로 점선 표시(DB 미경유 신규).
-        block.style.outline = src === "passthrough" ? "1px dashed var(--accent)" : "";
-        block.style.outlineOffset = src === "passthrough" ? "2px" : "";
-      }
-
-      function removeCharBlock(n) {
-        const blocks = document.querySelectorAll("#char_blocks .char-block");
-        if (blocks.length <= 1) return; // 최소 1칸 유지
-        const el = document.querySelector(`#char_blocks .char-block[data-idx="${n}"]`);
-        if (el) el.remove();
-      }
-
-      // ═════════ 태그 자동완성 (Danbooru + 한글 alias, 전부 로컬) ═════════
-      // anima-webgpu 자동완성 포팅: Web Worker CSV 파싱 + IndexedDB 캐시 + bigram 역인덱스.
-      // 데이터: /danbooru-tags.csv. 프롬프트는 서버로 안 나감(검색 전부 로컬).
-      //   영어: prefix 매칭. 한글: 2글자↑ bigram 역인덱스 → desc substring. post_count 내림차순.
-      // CSV 한 번만 파싱해 자동완성용(ac.tags)과 결과 뱃지용(tagInfo) 둘 다 채운다.
-      const AC_CSV_URL = "/danbooru-tags.csv";
-      const AC_DB_NAME = "dtr-tagac";
-      const AC_DB_VER = 1;
-      const AC_STORE = "index";
-
-      // Worker: CSV → {tag, pc, cat, alias, tagNorm, desc, category2} 파싱 + bigram 인덱스.
-      const AC_WORKER_SRC = `
-        // name,category,post_count,"[대분류 > 소분류] 정의문. 키워드: 별칭1, 별칭2..."
-        function parseLine(line) {
-          const m = line.match(/^([^,]*),([^,]*),([^,]*),([\\s\\S]*)$/);
-          if (!m) return null;
-          let desc = m[4].trim();
-          if (desc.startsWith('"') && desc.endsWith('"')) desc = desc.slice(1, -1);
-          const pc = parseInt(m[3], 10);
-          const cat2 = parseInt(m[2], 10);   // 2열 숫자 카테고리(결과 뱃지 색용)
-          if (!m[1] || isNaN(pc)) return null;
-          return { tag: m[1], pc, cat2: isNaN(cat2) ? 0 : cat2, desc };
-        }
-        // 한글 alias(표시용): "키워드:" 뒤 콤마 분리. (최신 CSV는 꺾쇠<>가 없음)
-        function extractAliases(desc) {
-          const i = desc.indexOf('키워드:');
-          if (i < 0) return [];
-          return desc.slice(i + 4).split(',').map(s => s.trim()).filter(Boolean);
-        }
-        // 카테고리(표시용): 맨 앞 [대분류] 또는 [대분류 > 소분류].
-        function extractCategory(desc) {
-          const mb = desc.match(/^\\s*\\[([^\\]]*)\\]/);
-          return mb ? mb[1].trim() : null;
-        }
-        self.onmessage = async (ev) => {
-          try {
-            const { url } = ev.data;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('CSV HTTP ' + res.status);
-            const text = await res.text();
-            self.postMessage({ type: 'progress', stage: '파싱' });
-            const lines = text.split('\\n');
-            const tags = [];        // 자동완성용 {tag, pc, desc, alias, cat, tagNorm}
-            const infoKeys = [];    // 결과 뱃지용 tagInfo: tag → {desc, category}
-            const infoVals = [];
-            for (let i = 0; i < lines.length; i++) {
-              const ln = lines[i];
-              if (!ln.trim()) continue;
-              if (i === 0 && /^name\\s*,/.test(ln)) continue;   // 헤더 스킵
-              const r = parseLine(ln);
-              if (!r) continue;
-              tags.push({
-                tag: r.tag, pc: r.pc, desc: r.desc,
-                alias: extractAliases(r.desc).join(', '),
-                cat: extractCategory(r.desc),
-                tagNorm: r.tag.toLowerCase().replace(/_/g, ' '),
-              });
-              infoKeys.push(r.tag);
-              infoVals.push({ desc: r.desc, category: r.cat2 });
-            }
-            tags.sort((a, b) => b.pc - a.pc);   // post_count 내림차순
-            self.postMessage({ type: 'progress', stage: '인덱스' });
-            // 한글 bigram 역인덱스: desc 연속 2글자(공백 제외) → 행 인덱스
-            const bi = new Map();
-            for (let i = 0; i < tags.length; i++) {
-              const s = tags[i].desc;
-              const seen = new Set();
-              for (let p = 0; p < s.length - 1; p++) {
-                const a = s[p], b = s[p + 1];
-                if (a === ' ' || b === ' ') continue;
-                const bg = a + b;
-                if (seen.has(bg)) continue;
-                seen.add(bg);
-                let arr = bi.get(bg);
-                if (!arr) { arr = []; bi.set(bg, arr); }
-                arr.push(i);
-              }
-            }
-            const bigramKeys = [], bigramVals = [];
-            for (const [k, v] of bi) { bigramKeys.push(k); bigramVals.push(v); }
-            self.postMessage({ type: 'done', tags, bigramKeys, bigramVals, infoKeys, infoVals });
-          } catch (e) {
-            self.postMessage({ type: 'error', message: e.message });
-          }
-        };
-      `;
-
-      // ── IndexedDB: 빌드 결과 저장/로드 (재방문 시 파싱 스킵) ──
-      function acIdbOpen() {
-        return new Promise((resolve, reject) => {
-          const rq = indexedDB.open(AC_DB_NAME, AC_DB_VER);
-          rq.onupgradeneeded = () => {
-            const db = rq.result;
-            if (db.objectStoreNames.contains(AC_STORE)) db.deleteObjectStore(AC_STORE);
-            db.createObjectStore(AC_STORE);
-          };
-          rq.onsuccess = () => resolve(rq.result);
-          rq.onerror = () => reject(rq.error);
-        });
-      }
-      async function acIdbGet(key) {
-        const db = await acIdbOpen();
-        return new Promise((resolve, reject) => {
-          const tx = db.transaction(AC_STORE, "readonly");
-          const rq = tx.objectStore(AC_STORE).get(key);
-          rq.onsuccess = () => resolve(rq.result);
-          rq.onerror = () => reject(rq.error);
-        });
-      }
-      async function acIdbSet(key, val) {
-        const db = await acIdbOpen();
-        return new Promise((resolve, reject) => {
-          const tx = db.transaction(AC_STORE, "readwrite");
-          tx.objectStore(AC_STORE).put(val, key);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      }
-
-      const ac = { ready: false, loading: false, tags: null, bigram: null };
-
-      // ac.tags/bigram 채우고, 결과 뱃지용 tagInfo 도 함께 구성한다.
-      function _acFillTagInfo(infoKeys, infoVals) {
-        tagInfo.clear();
-        for (let i = 0; i < infoKeys.length; i++) tagInfo.set(infoKeys[i], infoVals[i]);
-      }
-      function _acRebuildBigram(keys, vals) {
-        ac.bigram = new Map();
-        for (let i = 0; i < keys.length; i++) ac.bigram.set(keys[i], vals[i]);
-      }
-
-      async function acEnsureLoaded() {
-        if (ac.ready || ac.loading) return;
-        ac.loading = true;
-        try {
-          // 1) IndexedDB 캐시 우선
-          const cached = await acIdbGet("data");
-          if (cached && cached.tags && cached.bigramKeys) {
-            ac.tags = cached.tags;
-            _acRebuildBigram(cached.bigramKeys, cached.bigramVals);
-            if (cached.infoKeys) _acFillTagInfo(cached.infoKeys, cached.infoVals);
-            ac.ready = true; ac.loading = false;
-            console.log("태그 자동완성 준비됨 (캐시 " + ac.tags.length + "개)");
-            return;
-          }
-          // 2) Worker 로 CSV 파싱 + 인덱스 빌드
-          console.log("태그 자동완성 데이터 빌드 중... (최초 1회)");
-          const blob = new Blob([AC_WORKER_SRC], { type: "application/javascript" });
-          const wk = new Worker(URL.createObjectURL(blob), { type: "module" });
-          const result = await new Promise((resolve, reject) => {
-            wk.onmessage = (ev) => {
-              const m = ev.data;
-              if (m.type === "done") resolve(m);
-              else if (m.type === "error") reject(new Error(m.message));
-            };
-            wk.onerror = (e) => reject(new Error(e.message || "worker 오류"));
-            wk.postMessage({ url: new URL(AC_CSV_URL, location.href).href });
-          });
-          wk.terminate();
-          ac.tags = result.tags;
-          _acRebuildBigram(result.bigramKeys, result.bigramVals);
-          _acFillTagInfo(result.infoKeys, result.infoVals);
-          ac.ready = true;
-          console.log("태그 자동완성 준비됨 (" + ac.tags.length + "개)");
-          // 3) IndexedDB 저장 (다음 방문 즉시)
-          acIdbSet("data", {
-            tags: result.tags,
-            bigramKeys: result.bigramKeys, bigramVals: result.bigramVals,
-            infoKeys: result.infoKeys, infoVals: result.infoVals,
-          }).catch(() => {});
-          // 결과가 이미 화면에 있으면 뱃지 카테고리 색 갱신
-          if (typeof currentResultData !== "undefined" && currentResultData && currentResultData.final_prompt) {
-            try { displayResults(); } catch (e) {}
-          }
-        } catch (e) {
-          console.warn("태그 자동완성 로드 실패:", e);
-        } finally {
-          ac.loading = false;
-        }
-      }
-
-      // ── 검색 ──
-      const AC_LIMIT = 50;
-      const HANGUL_RE = /[\uac00-\ud7a3]/;
-      function acSearch(qRaw) {
-        if (!ac.ready) return [];
-        const q = qRaw.trim();
-        if (!q) return [];
-        const out = [];
-        if (HANGUL_RE.test(q)) {
-          if (q.length < 2) return [];   // 한글 1글자 스킵
-          const cand = ac.bigram.get(q.slice(0, 2));
-          if (!cand) return [];
-          for (let i = 0; i < cand.length; i++) {
-            const r = ac.tags[cand[i]];
-            if (r.desc.includes(q)) { out.push(r); if (out.length >= AC_LIMIT) break; }
-          }
-        } else {
-          // 영어 prefix(언더스코어/공백 양쪽 정규화)
-          const ql = q.toLowerCase().replace(/_/g, " ");
-          for (let i = 0; i < ac.tags.length; i++) {
-            if (ac.tags[i].tagNorm.startsWith(ql)) {
-              out.push(ac.tags[i]); if (out.length >= AC_LIMIT) break;
-            }
-          }
-        }
-        return out;
-      }
-      function acFmtCount(n) {
-        if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-        if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-        return String(n);
-      }
-      function acEscape(s) {
-        return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-      }
-      function acHighlight(text, q) {
-        const esc = acEscape(text);
-        if (!q) return esc;
-        const idx = text.toLowerCase().indexOf(q.toLowerCase());
-        if (idx < 0) return esc;
-        return acEscape(text.slice(0, idx)) + "<mark>" +
-               acEscape(text.slice(idx, idx + q.length)) + "</mark>" +
-               acEscape(text.slice(idx + q.length));
-      }
-      // 커서 기준 현재 토큰 [경계, 단어부 오프셋, 검색어]. 가중치/괄호 문법 제외.
-      function acCurrentToken(text, caret) {
-        let start = text.lastIndexOf(",", caret - 1) + 1;
-        let end = text.indexOf(",", caret);
-        if (end < 0) end = text.length;
-        let inner = text.slice(start, end);
-        let lead = 0;
-        const mLead = inner.match(/^[\s(]*/);
-        if (mLead) { lead = mLead[0].length; inner = inner.slice(lead); }
-        const mTail = inner.match(/(:[+-]?\d*\.?\d*)?[\s)]*$/);
-        if (mTail && mTail[0]) inner = inner.slice(0, inner.length - mTail[0].length);
-        const wordStart = start + lead;
-        return { tokenStart: start, tokenEnd: end, wordStart, wordEnd: wordStart + inner.length, query: inner };
-      }
-
-      document.addEventListener("DOMContentLoaded", () => {
-        makeAutocomplete("final_prompt_edit", "ac_dropdown");
-        // 첫 포커스 시 자동완성 데이터 로드(페이지 로드를 막지 않음)
-        const _ta = document.getElementById("final_prompt_edit");
-        if (_ta) _ta.addEventListener("focus", acEnsureLoaded, { once: true });
-      });
-      document.addEventListener("DOMContentLoaded", () => { addArtistRow(); renderQualityBadges(); });
-
-      // 글로벌 툴팁 JS 로직
-      const globalTooltip = document.createElement('div');
-      globalTooltip.className = 'custom-tooltip';
-      document.body.appendChild(globalTooltip);
-
-      document.addEventListener('mouseover', (e) => {
-        const tag = e.target.closest('[data-tooltip]');
-        if (tag) {
-          globalTooltip.textContent = tag.getAttribute('data-tooltip');
-          globalTooltip.style.display = 'block';
-          
-          const rect = tag.getBoundingClientRect();
-          let topPos = rect.top - 8;
-          let transform = 'translate(-50%, -100%)';
-          
-          // 화면 위쪽으로 잘릴 것 같으면 툴팁을 아래로 표시
-          if (topPos < 50) {
-            topPos = rect.bottom + 8;
-            transform = 'translate(-50%, 0)';
-          }
-          
-          // 화면 왼쪽/오른쪽으로 잘릴 것 같으면 보정 (선택적)
-          let leftPos = rect.left + (rect.width / 2);
-          
-          globalTooltip.style.left = leftPos + 'px';
-          globalTooltip.style.top = topPos + 'px';
-          globalTooltip.style.transform = transform;
-        }
-      });
-
-      document.addEventListener('mouseout', (e) => {
-        const tag = e.target.closest('[data-tooltip]');
-        if (tag) {
-          globalTooltip.style.display = 'none';
-        }
-      });
-
-      // 스크롤 시 툴팁 숨기기 (위치 어긋남 방지)
-      document.addEventListener('scroll', () => {
-        globalTooltip.style.display = 'none';
-      }, true);
-
-      const thresholdSlider = document.getElementById("threshold");
-      const thresholdVal = document.getElementById("threshold_val");
-      const kwTempSlider = document.getElementById("kw_temp");
-      const kwTempVal = document.getElementById("kw_temp_val");
-      const nlTempSlider = document.getElementById("nl_temp");
-      const nlTempVal = document.getElementById("nl_temp_val");
-
-      thresholdSlider.addEventListener("input", (e) => {
-        thresholdVal.textContent = parseFloat(e.target.value).toFixed(2);
-      });
-      kwTempSlider.addEventListener("input", (e) => {
-        kwTempVal.textContent = parseFloat(e.target.value).toFixed(1);
-      });
-      nlTempSlider.addEventListener("input", (e) => {
-        nlTempVal.textContent = parseFloat(e.target.value).toFixed(1);
-      });
-
-      async function generateTags() {
-        const btn = document.getElementById("generate_btn");
-        const spinner = document.getElementById("spinner");
-        const btnText = btn.querySelector("span");
-        const resultsContainer = document.getElementById("results_container");
-        const emptyState = document.getElementById("empty_state");
-        const errorMsg = document.getElementById("error_msg");
-
-        // 초기화
-        errorMsg.style.display = "none";
-        resultsContainer.style.display = "none";
-        emptyState.style.display = "flex";
-        btn.disabled = true;
-        spinner.style.display = "block";
-        btnText.textContent = "생성 준비 중...";
-        
-        currentResultData = {};
-        // 새 생성 시작: 편집 textarea 비움(이전 결과 잔류 방지)
-        const _fpEdit = document.getElementById("final_prompt_edit");
-        if (_fpEdit) _fpEdit.value = "";
-
-        const splitUnmatchedNames = [];
-        const _note = document.getElementById("unmatched_note");
-        if (_note) { _note.style.display = "none"; _note.innerHTML = ""; }
-        const _grid = document.getElementById("char_grid_box");
-        if (_grid) _grid.style.display = "none";
-
-        let payload, apiUrl;
-        if (currentMode === "split") {
-          apiUrl = "/api/generate_split";
-          const characters = [];
-          document.querySelectorAll("#char_blocks .char-block").forEach((blk) => {
-            // 출처 3택 세그먼트 상태에서 is_original/is_passthrough 를 파생.
-            const seg = blk.querySelector(".source-seg");
-            const src = seg ? seg.dataset.source : "db";
-            const isOriginal = src === "original";
-            const isPassthrough = src === "passthrough";
-            // 오리지널은 이름/작품을 비우지만, db/passthrough 는 살려둔다(이름을 NL 핸들로 사용).
-            const name = isOriginal ? "" : blk.querySelector(".cb-name").value.trim();
-            const series = isOriginal ? "" : blk.querySelector(".cb-series").value.trim();
-            const desc = blk.querySelector(".cb-desc").value.trim();
-            if (name || series || desc) {
-              characters.push({ name, series, desc, is_original: isOriginal, is_passthrough: isPassthrough });
-            }
-          });
-          const background = document.getElementById("bg_desc").value.trim();
-          if (characters.length === 0 && !background) {
-            showError("인물 또는 배경을 하나 이상 입력해주세요.");
-            resetButton();
-            return;
-          }
-          payload = {
-            characters,
-            background,
-            nl_temperature: parseFloat(document.getElementById("nl_temp").value),
-            nl_tone: currentNlTone,
-          };
-        } else {
-          apiUrl = "/api/generate";
-          payload = {
-            prompt: document.getElementById("prompt").value.trim(),
-            threshold: parseFloat(document.getElementById("threshold").value),
-            kw_temperature: parseFloat(document.getElementById("kw_temp").value),
-            nl_temperature: parseFloat(document.getElementById("nl_temp").value),
-            nl_tone: currentNlTone,
-            search_categories: getSearchPoolCategories(),
-          };
-          if (!payload.prompt) {
-            showError("이미지 묘사를 입력해주세요.");
-            resetButton();
-            return;
-          }
-        }
-
-        try {
-          const response = await fetch(apiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(
-              errData.detail || `서버 에러가 발생했습니다: ${response.status}`,
-            );
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop();
-
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              const chunk = JSON.parse(line);
-              if (chunk.status === "rejected" || chunk.reason === "duplicate_ip") {
-                showDuplicateModal(chunk.message || "동일 IP로 처리 중인 작업이 있습니다.");
-                await reader.cancel();
-                resetButton();
-                return;
-              }
-              if (chunk.status) {
-                btnText.textContent = chunk.status;
-                // 대기 메시지는 결과 영역(빈 상태)에 크게 표시
-                const qm = document.getElementById("queue_msg");
-                if (qm) {
-                  if (chunk.status.indexOf("대기") !== -1) {
-                    qm.textContent = "⏳ " + chunk.status;
-                    qm.style.display = "block";
-                  } else {
-                    qm.style.display = "none";
-                  }
-                }
-              }
-              if (chunk.data && Object.keys(chunk.data).length > 0) {
-                // 분할모드: 인물별 character 이벤트는 배열로 누적(그리드 + 미스 표시)
-                if (chunk.data.character) {
-                  const ch = chunk.data.character;
-                  if (!currentResultData) currentResultData = {};
-                  if (!currentResultData.characters) currentResultData.characters = [];
-                  currentResultData.characters.push(ch);
-                  if (ch.name_unmatched && ch.name) {
-                    splitUnmatchedNames.push(ch.name);
-                    const note = document.getElementById("unmatched_note");
-                    note.style.display = "block";
-                    note.innerHTML =
-                      '<span class="name-unmatched-note">⚠ DB에 없는 캐릭터(태그 미검색, 자연어에만 이름 사용): ' +
-                      splitUnmatchedNames.map(escapeHtml).join(", ") + "</span>";
-                  }
-                  delete chunk.data.character; // spread 대상에서 제외(이미 배열에 넣음)
-                }
-                currentResultData = { ...currentResultData, ...chunk.data };
-                displayResults();
-              }
-            }
-          }
-        } catch (err) {
-          showError(err.message || "API 서버에 연결할 수 없습니다.");
-        } finally {
-          resetButton();
-        }
-      }
-
-      async function searchDirectDB() {
-        const query = document.getElementById("direct_query").value.trim();
-        const threshold = parseFloat(document.getElementById("direct_threshold").value);
-        
-        const btn = document.getElementById("direct_search_btn");
-        const spinner = document.getElementById("direct_spinner");
-        const btnText = btn.querySelector("span");
-        const errorMsg = document.getElementById("direct_error_msg");
-        const resultContainer = document.getElementById("res_direct_db");
-        
-        errorMsg.style.display = "none";
-        resultContainer.style.display = "none";
-        
-        if (!query) {
-          errorMsg.textContent = "조회할 단어를 입력해주세요.";
-          errorMsg.style.display = "block";
-          return;
-        }
-
-        btn.disabled = true;
-        spinner.style.display = "block";
-        btnText.textContent = "조회 중...";
-
-        const categories = Array.from(
-          document.querySelectorAll(".cat-toggle[data-cat].active")
-        ).map((b) => parseInt(b.dataset.cat, 10));
-
-        try {
-          const response = await fetch("/api/direct_search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: query,
-              threshold: threshold,
-              top_k: 20,
-              categories: categories.length ? categories : null,
-            }),
-          });
-
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || `서버 에러가 발생했습니다: ${response.status}`);
-          }
-
-          const data = await response.json();
-          lastDirectDBResults = data.results || [];
-          renderDirectDBResults();
-          
-          const resultContainer = document.getElementById("res_direct_db");
-          resultContainer.style.display = "flex";
-          
-        } catch (err) {
-          errorMsg.textContent = err.message || "API 서버에 연결할 수 없습니다.";
-          errorMsg.style.display = "block";
-        } finally {
-          btn.disabled = false;
-          spinner.style.display = "none";
-          btnText.textContent = "조회하기";
-        }
-      }
-
-      function renderDirectDBResults() {
-        if (!lastDirectDBResults) return;
-        const resultContainer = document.getElementById("res_direct_db");
-        const replaceUnderscores = document.getElementById("replace_underscores").checked;
-        const escapeParentheses = document.getElementById("escape_parentheses").checked;
-        
-        resultContainer.innerHTML = "";
-        
-        if (lastDirectDBResults.length === 0) {
-          resultContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
-        } else {
-          lastDirectDBResults.forEach((item) => {
-            const el = document.createElement("span");
-            el.className = "tag candidate copyable";
-            
-            let tagText = item.tag;
-            if (replaceUnderscores) tagText = tagText.replace(/_/g, " ");
-            if (escapeParentheses) tagText = tagText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-            
-            el.textContent = `${tagText} (${item.score.toFixed(2)})`;
-            el.style.cursor = "pointer";
-            
-            let descText = "";
-            const cleanTag = item.tag.trim();
-            if (tagInfo.has(cleanTag)) {
-              const info = tagInfo.get(cleanTag);
-              descText = info.desc;
-              el.classList.add("tag-cat-" + info.category);
-            }
-            
-            let tooltipDesc = descText ? descText : item.tag + "\n\n(설명 없음)";
-            const clickHint = directClickMode === "danbooru"
-              ? "\n\n(클릭하여 Danbooru 열기)"
-              : "\n\n(클릭하여 복사)";
-            el.setAttribute("data-tooltip", tooltipDesc + clickHint);
-
-            if (directClickMode === "danbooru") {
-              el.onclick = () => {
-                // Danbooru 태그 검색은 원본 언더스코어 형태 사용(공백/이스케이프 미적용)
-                const url = "https://danbooru.donmai.us/posts?tags=" +
-                  encodeURIComponent(item.tag);
-                window.open(url, "_blank", "noopener");
-              };
-            } else {
-              el.onclick = () => {
-                doCopy(tagText, () => {
-                  const originalText = el.textContent;
-                  const originalBg = el.style.background;
-                  const originalColor = el.style.color;
-                  const originalBorder = el.style.borderColor;
-                  const originalWidth = el.style.width;
-
-                  const currentWidth = el.offsetWidth;
-                  el.style.width = currentWidth + "px";
-                  el.style.display = "inline-flex";
-                  el.style.justifyContent = "center";
-                  el.style.alignItems = "center";
-                  el.style.boxSizing = "border-box";
-
-                  el.textContent = "복사!";
-                  el.style.color = "#0b0e14";
-                  el.style.background = "var(--primary)";
-                  el.style.borderColor = "var(--primary)";
-
-                  setTimeout(() => {
-                    el.textContent = originalText;
-                    el.style.background = originalBg;
-                    el.style.color = originalColor;
-                    el.style.borderColor = originalBorder;
-                    el.style.width = originalWidth;
-                    el.style.display = "";
-                    el.style.justifyContent = "";
-                    el.style.alignItems = "";
-                  }, 1000);
-                });
-              };
-            }
-
-            resultContainer.appendChild(el);
-          });
-        }
-      }
-
-      function updatePromptDisplay() {
-        if (currentResultData) displayResults();
-        if (lastDirectDBResults) renderDirectDBResults();
-      }
-
-      function displayResults() {
-        if (!currentResultData) return;
-        const data = currentResultData;
-        const replaceUnderscores = document.getElementById("replace_underscores").checked;
-        const escapeParentheses = document.getElementById("escape_parentheses").checked;
-
-        document.getElementById("empty_state").style.display = "none";
-        document.getElementById("results_container").style.display = "flex";
-
-        // 1. 자연어 프롬프트 처리
-        const nlPromptBox = document.getElementById("nl_prompt_box");
-        if (data.english_prompt) {
-          nlPromptBox.style.display = "block";
-          // 단어형+(phrase)는 danbooru 그리드처럼 뱃지 + 휠 가중치로 렌더.
-          // 그 외 톤(rich/plain)은 기존대로 평문 문장.
-          if (currentNlTone === "phrase") {
-            renderNlPhraseBadges(data.english_prompt);
-          } else {
-            currentNlPhraseString = "";
-            const nlEl = document.getElementById("res_nl_prompt");
-            nlEl.classList.remove("tag-list");
-            nlEl.textContent = data.english_prompt;
-          }
-        } else {
-          nlPromptBox.style.display = "none";
-        }
-
-        // 2. 최종 단보루 프롬프트 처리
-        const finalPromptBox = document.getElementById("res_final_prompt").closest(".result-box");
-        if (data.final_prompt) {
-          finalPromptBox.style.display = "block";
-          const finalContainer = document.getElementById("res_final_prompt");
-          finalContainer.innerHTML = "";
-
-          // 고정 뱃지 렌더 헬퍼 (클릭 삭제 없음, 색상 토큰 1개)
-          const addFixedBadge = (txt) => {
-            const b = document.createElement("span");
-            b.className = "tag fixed-badge";
-            // 고정 태그는 언더스코어 치환/괄호 이스케이프를 받지 않고 입력 그대로 출력
-            b.textContent = txt;
-            b.setAttribute("data-tooltip", "고정 태그 (LLM/DB 미경유, 치환·이스케이프 미적용)");
-            finalContainer.appendChild(b);
-          };
-          // 앞 슬롯: 위치=맨앞으로 지정된 고정태그(우선순위순)
-          const { front: fixedFront, back: fixedBack } = fixedSlots();
-          fixedFront.forEach(addFixedBadge);
-
-          // 퀄리티 뒤, DB 태그 앞: 패스스루(신규 캐릭터) 이름 배지.
-          // DB를 못 뚫는 신규 캐릭터라 RAG 태그로는 안 나가므로 프론트에서 직접 끼운다.
-          const addPassthroughBadge = (txt) => {
-            const b = document.createElement("span");
-            b.className = "tag passthrough-badge";
-            let t = txt;
-            if (replaceUnderscores) t = t.replace(/_/g, " ");
-            if (escapeParentheses) t = t.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-            b.textContent = t;
-            b.setAttribute("data-tooltip", "패스스루 (신규 캐릭터 — DB 미경유, 사용자 입력 이름)");
-            finalContainer.appendChild(b);
-          };
-          parsePassthroughNames().forEach(addPassthroughBadge);
-
-          let tagsArray = data.final_prompt.split(", ").filter(t => t.trim() !== "");
-
-          tagsArray.forEach((token, idx) => {
-            const el = document.createElement("span");
-            el.className = "tag deletable db-tag";
-            // 토큰은 "tag" 또는 "(tag:1.2)". 가중치를 분리해 코어 태그로 설명/색상 매칭.
-            const { tag: coreTag, weight } = parseTagWeight(token);
-            let tooltip = "휠로 가중치 조절 · 클릭하여 삭제";
-            const cleanTag = coreTag.trim();
-
-            if (tagInfo.has(cleanTag)) {
-              const info = tagInfo.get(cleanTag);
-              const descText = info.desc;
-              tooltip = (descText ? descText : "설명 없음") + "\n\n(휠: 가중치 ±0.1 · 클릭: 삭제)";
-              el.classList.add("tag-cat-" + info.category);
-            } else {
-              tooltip = "설명을 찾을 수 없습니다.\n\n(휠: 가중치 ±0.1 · 클릭: 삭제)";
-            }
-            el.setAttribute("data-tooltip", tooltip);
-
-            // 표시: 코어 태그에만 치환/이스케이프 적용, 가중치 표기는 그대로 감싼다.
-            let coreText = coreTag;
-            if (replaceUnderscores) coreText = coreText.replace(/_/g, " ");
-            if (escapeParentheses) coreText = coreText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-            el.textContent = formatTagWeight(coreText, weight);
-            if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
-
-            // 클릭 삭제 — 위치(idx) 기반으로 정확히 그 토큰만 제거(중복 태그 안전).
-            el.onclick = () => {
-              const toks = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "");
-              toks.splice(idx, 1);
-              currentResultData.final_prompt = toks.join(", ");
-              syncFinalEditFromData();
-              displayResults();
-            };
-
-            // 휠 가중치 조절(호버 중). DB 태그 뱃지에만 건다(고정/패스스루/그리드 제외).
-            el.addEventListener("wheel", (e) => {
-              e.preventDefault();          // 페이지 스크롤 방지
-              const delta = e.deltaY < 0 ? 0.1 : -0.1;   // 위로 굴리면 +, 아래로 -
-              bumpTagWeight(idx, delta);
-            }, { passive: false });
-
-            finalContainer.appendChild(el);
-          });
-
-          // 뒤 슬롯: 위치=맨뒤로 지정된 고정태그(우선순위순)
-          fixedBack.forEach(addFixedBadge);
-
-          if (tagsArray.length === 0 && fixedFront.length === 0 && fixedBack.length === 0) {
-            finalContainer.innerHTML = '<span style="color: var(--dim); font-size: 13px;">매칭된 태그가 없습니다.</span>';
-          }
-
-          // textarea(편집칸)를 데이터와 동기화. 단 포커스 중이면 덮어쓰지 않음.
-          syncFinalEditFromData();
-        } else {
-          finalPromptBox.style.display = "none";
-        }
-
-        // 3. 키워드 처리 (한국어 + 영어)
-        const kwBox = document.getElementById("keywords_box");
-        const hasKo = data.ko_units && data.ko_units.length > 0;
-        const hasEn = data.keywords && data.keywords.length > 0;
-        if (hasKo || hasEn) {
-          kwBox.style.display = "block";
-
-          const koContainer = document.getElementById("res_keywords_ko");
-          koContainer.innerHTML = "";
-          if (hasKo) {
-            data.ko_units.forEach((kw) => {
-              const el = document.createElement("span");
-              el.className = "tag";
-              el.textContent = kw;   // 한국어는 치환/이스케이프 불필요
-              koContainer.appendChild(el);
-            });
-          }
-
-          const enContainer = document.getElementById("res_keywords_en");
-          enContainer.innerHTML = "";
-          if (hasEn) {
-            data.keywords.forEach((kw) => {
-              const el = document.createElement("span");
-              el.className = "tag";
-              let kwText = kw;
-              if (replaceUnderscores) kwText = kwText.replace(/_/g, " ");
-              if (escapeParentheses) kwText = kwText.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-              el.textContent = kwText;
-              enContainer.appendChild(el);
-            });
-          }
-        } else {
-          kwBox.style.display = "none";
-        }
-
-        // 4. 인물 그리드 (분할 모드 전용)
-        const gridBox = document.getElementById("char_grid_box");
-        const chars = data.characters || [];
-        const bgTags = data.background_tags || [];
-        if (chars.length > 0 || bgTags.length > 0) {
-          gridBox.style.display = "block";
-          const grid = document.getElementById("res_char_grid");
-          grid.innerHTML = "";
-          chars.forEach((ch, i) => {
-            const card = document.createElement("div");
-            card.className = "char-card";
-
-            const head = ch.name
-              ? escapeHtml(ch.name)
-              : '<span style="color:var(--dim);">인물 ' + (ch.index || i + 1) + "</span>";
-            const series = ch.series
-              ? ' <span class="cc-series">[' + escapeHtml(ch.series) + "]</span>"
-              : "";
-            const miss = ch.name_unmatched
-              ? ' <span class="cc-miss" title="DB에 없는 캐릭터 — 이름은 자연어에만 사용">DB 미검색</span>'
-              : "";
-            const pt = ch.is_passthrough
-              ? ' <span class="cc-pass" title="패스스루 — DB 미경유 신규 캐릭터, 이름을 태그 맨 앞+자연어에 사용">패스스루</span>'
-              : "";
-
-            const tags = (ch.tags || []).map((t) => {
-              let tx = t;
-              if (replaceUnderscores) tx = tx.replace(/_/g, " ");
-              if (escapeParentheses) tx = tx.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-              return '<span class="cc-tag">' + escapeHtml(tx) + "</span>";
-            }).join("");
-
-            card.innerHTML =
-              '<div class="cc-head">' + head + series + miss + pt + "</div>" +
-              '<div class="cc-tags">' +
-              (tags || '<span style="color:var(--dim);font-size:12px;">태그 없음</span>') +
-              "</div>";
-            grid.appendChild(card);
-          });
-
-          // 배경/공통 카드 (있을 때만)
-          if (bgTags.length > 0) {
-            const bg = document.createElement("div");
-            bg.className = "char-card char-card-bg";
-            const bgTagHtml = bgTags.map((t) => {
-              let tx = t;
-              if (replaceUnderscores) tx = tx.replace(/_/g, " ");
-              if (escapeParentheses) tx = tx.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-              return '<span class="cc-tag">' + escapeHtml(tx) + "</span>";
-            }).join("");
-            bg.innerHTML =
-              '<div class="cc-head">\u{1F310} 배경 / 공통</div>' +
-              '<div class="cc-tags">' + bgTagHtml + "</div>";
-            grid.appendChild(bg);
-          }
-        } else {
-          gridBox.style.display = "none";
-        }
-      }
-
-      function showDuplicateModal(msg) {
-        const m = document.getElementById("dup_modal");
-        const t = document.getElementById("dup_modal_msg");
-        if (t) t.textContent = msg || "동일 IP로 처리 중인 작업이 있습니다.";
-        if (m) m.style.display = "flex";
-      }
-      function closeDuplicateModal() {
-        const m = document.getElementById("dup_modal");
-        if (m) m.style.display = "none";
-      }
-
-      function showError(msg) {
-        const errorEl = document.getElementById("error_msg");
-        errorEl.textContent = msg;
-        errorEl.style.display = "block";
-      }
-
-      function resetButton() {
-        const btn = document.getElementById("generate_btn");
-        const spinner = document.getElementById("spinner");
-        const btnText = btn.querySelector("span");
-
-        btn.disabled = false;
-        spinner.style.display = "none";
-        btnText.textContent = "태그 생성하기";
-      }
-
-      // 복사 공통 헬퍼: HTTPS/localhost 가 아니면 navigator.clipboard 가 없으므로
-      // execCommand 폴백을 쓴다. 성공 시 onOk 콜백 실행.
-      function doCopy(text, onOk) {
-        if (!text) return;
-        const fallback = () => {
-          try {
-            const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            const ok = document.execCommand("copy");
-            document.body.removeChild(ta);
-            if (ok && onOk) onOk();
-            else if (!ok) alert("복사 실패: 직접 선택해 복사해주세요.");
-          } catch (e) {
-            alert("복사 실패: 직접 선택해 복사해주세요.");
-          }
-        };
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(text).then(() => onOk && onOk()).catch(fallback);
-        } else {
-          fallback();
-        }
-      }
-
-      // ── 고정 태그 (LLM/DB 미경유, 프론트에서 앞뒤로 부착) ──
-      // 퀄리티 input 의 원시 토큰 배열(가중치 표기 포함, 로컬 (tag:w)). 진실원천.
-      function qualityTokens() {
-        const raw = (document.getElementById("fixed_quality")?.value || "").trim();
-        if (!raw) return [];
-        return raw.split(",").map(t => t.trim()).filter(Boolean);
-      }
-      // 결과/복사용: 각 토큰에 현재 표기(로컬/NAI) 적용. (고정태그는 치환/이스케이프 미적용)
-      function parseFixedQuality() {
-        return qualityTokens().map((tok) => {
-          const { tag, weight } = parseTagWeight(tok);
-          return formatTagWeight(tag, weight);
-        });
-      }
-      // 퀄리티 input 변경 → 뱃지 재렌더 + 결과 갱신
-      function onQualityInput() {
-        renderQualityBadges();
-        refreshFixedTags();
-      }
-      // 퀄리티 태그를 뱃지로 렌더(휠 가중치). 가중치는 input 텍스트에 로컬 표기로 되쓴다.
-      function renderQualityBadges() {
-        const c = document.getElementById("quality_badges");
-        if (!c) return;
-        c.innerHTML = "";
-        const toks = qualityTokens();
-        toks.forEach((token, idx) => {
-          const el = document.createElement("span");
-          el.className = "tag deletable nl-phrase-badge";
-          const { tag, weight } = parseTagWeight(token);
-          el.textContent = formatTagWeight(tag, weight);  // 표시도 로컬/NAI 반영
-          if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
-          el.setAttribute("data-tooltip", "휠: 가중치 ±0.1 · 클릭: 삭제");
-          el.onclick = () => {
-            const t = qualityTokens();
-            t.splice(idx, 1);
-            document.getElementById("fixed_quality").value = t.join(", ");
-            onQualityInput();
-          };
-          el.addEventListener("wheel", (e) => {
-            e.preventDefault();
-            bumpQualityWeight(idx, e.deltaY < 0 ? 0.1 : -0.1);
-          }, { passive: false });
-          c.appendChild(el);
-        });
-      }
-      function bumpQualityWeight(idx, delta) {
-        const toks = qualityTokens();
-        if (idx < 0 || idx >= toks.length) return;
-        const { tag, weight } = parseTagWeight(toks[idx]);
-        let w = Math.round((weight + delta) * 10) / 10;
-        if (w < weightFloor()) w = weightFloor();
-        toks[idx] = _localWeightToken(tag, w);   // input 에는 항상 로컬 표기 저장
-        document.getElementById("fixed_quality").value = toks.join(", ");
-        renderQualityBadges();
-        refreshFixedTags();
-      }
-      let artistRowSeq = 0;
-      function addArtistRow(name = "", weight = "1.0") {
-        artistRowSeq += 1;
-        const n = artistRowSeq;
-        const row = document.createElement("div");
-        row.className = "artist-row";
-        row.dataset.idx = n;
-        row.innerHTML = `
-          <input type="text" class="cb-input artist-name" placeholder="작가명 (예: ratatatat74)"
-            value="${name.replace(/"/g, "&quot;")}" oninput="refreshFixedTags()" />
-          <input type="number" class="cb-input artist-weight" step="0.1" min="${currentWeightSyntax === 'nai' ? '-10' : '0'}" value="${weight}"
-            title="가중치 (1.0 = 기본)" oninput="refreshFixedTags()" />
-          <button type="button" class="cb-remove artist-remove" title="삭제"
-            onclick="removeArtistRow(${n})">×</button>
-        `;
-        document.getElementById("artist_rows").appendChild(row);
-      }
-      function removeArtistRow(n) {
-        const el = document.querySelector(`.artist-row[data-idx="${n}"]`);
-        if (el) el.remove();
-        refreshFixedTags();
-      }
-      function parseFixedArtist() {
-        const prefix = currentArtistPrefix || "";   // "" / "@" / "artist:"
-        const rows = document.querySelectorAll("#artist_rows .artist-row");
-        const out = [];
-        rows.forEach((row) => {
-          let name = row.querySelector(".artist-name").value.trim();
-          if (!name) return;
-          name = name.replace(/^(@|artist:)/, "");       // 입력에 기존 접두사 있으면 일단 떼고
-          if (prefix) name = prefix + name;              // 선택한 접두사 붙임(가중치 안으로)
-          const wRaw = row.querySelector(".artist-weight").value.trim();
-          const w = parseFloat(wRaw);
-          if (!isNaN(w) && Math.abs(w - 1.0) > 1e-9) {
-            // 1.0이 아니면 표기별 형식(로컬 (name:w) / NAI w::name::). formatTagWeight 로 통일.
-            out.push(formatTagWeight(name, w));
-          } else {
-            out.push(name);                              // 1.0이면 그대로
-          }
-        });
-        return out;
-      }
-      // DB 결과 태그 문자열에 고정 태그를 앞뒤로 붙여 최종 문자열 생성(복사용)
-      // 패스스루(신규 캐릭터) 이름 수집: DB를 못 뚫는 신규 캐릭터라 RAG 태그로는 못 나가므로,
-      // 사용자가 적은 캐릭터명을 프론트에서 태그 슬롯 맨 앞(퀄리티 고정태그 뒤)에 직접 끼운다.
-      // 원본(언더스코어 포함) 문자열을 반환 — 치환/이스케이프는 호출측에서 DB 태그와 동일하게 처리.
-      // ── Danbooru 태그 가중치 (tag:weight) 헬퍼 ──────────────────────────
-      // final_prompt 문자열의 각 요소는 "tag" 또는 "(tag:1.2)" 형태일 수 있다.
-      // 가중치 1.0 은 괄호 없이 "tag" 로 표기(기본값).
-      const _WEIGHT_RE = /^\((.+):\s*(-?\d+(?:\.\d+)?)\)$/;
-      // NAI 표기 역파싱: weight::tag:: (중첩 오염 복구 포함)
-      const _NAI_WEIGHT_RE = /^(-?\d+(?:\.\d+)?)::([\s\S]+)::$/;
-
-      function parseTagWeight(token) {
-        // 반환: { tag, weight } — 가중치 없으면 weight=1.0
-        const t = (token || "").trim();
-        // 로컬 (tag:weight)
-        let m = t.match(_WEIGHT_RE);
-        if (m) {
-          const w = parseFloat(m[2]);
-          return { tag: m[1].trim(), weight: isNaN(w) ? 1.0 : w };
-        }
-        // NAI weight::tag:: — 내부 상태에 NAI 표기가 섞여 들어와도(또는 과거 오염
-        // 데이터) 역파싱해 휠 중첩 누적을 막는다. 최외곽 weight 채택, 중첩은 벗김.
-        m = t.match(_NAI_WEIGHT_RE);
-        if (m) {
-          const w = parseFloat(m[1]);
-          let inner = m[2];
-          let guard = 0, im;
-          while ((im = inner.match(_NAI_WEIGHT_RE)) && guard++ < 50) inner = im[2];
-          inner = inner.replace(/^(?:-?\d+(?:\.\d+)?::)+/, "").replace(/(?:::)+$/, "").trim();
-          return { tag: inner, weight: isNaN(w) ? 1.0 : w };
-        }
-        return { tag: t, weight: 1.0 };
-      }
-
-      // 저장 전용: 내부 상태는 표기 토글과 무관하게 항상 로컬 (tag:weight) 로 보관.
-      // 이래야 휠 재조절 시 parseTagWeight 가 안정적으로 역파싱한다(NAI 중첩 누적 방지).
-      function _localWeightToken(tag, weight) {
-        const w = Math.round(weight * 10) / 10;
-        if (Math.abs(w - 1.0) < 1e-9) return tag;
-        return "(" + tag + ":" + w.toFixed(1) + ")";
-      }
-
-      function formatTagWeight(tag, weight) {
-        // 1.0 이면 tag 만(로컬·NAI 공통). 아니면 표기별 형식.
-        const w = Math.round(weight * 10) / 10;
-        if (Math.abs(w - 1.0) < 1e-9) return tag;
-        const wStr = w.toFixed(1);
-        if (currentWeightSyntax === "nai") {
-          // NAI 수치 강조: weight::tag:: (1.2::tag::, 음수 -1.0::tag:: 가능)
-          return wStr + "::" + tag + "::";
-        }
-        // 로컬(SD 계열): (tag:weight)
-        return "(" + tag + ":" + wStr + ")";
-      }
-
-      // final_prompt 문자열에 치환/이스케이프를 적용하되 가중치 표기는 보존한다.
-      // 각 토큰의 코어 태그에만 _→공백 / 괄호 이스케이프를 걸고, (core:weight) 형태는
-      // 가중치 괄호를 깨지 않도록 다시 감싼다.
-      function applyTagFormatting(dbTagString, replaceUnderscores, escapeParentheses) {
-        const tokens = (dbTagString || "").split(", ").map(t => t.trim()).filter(Boolean);
-        return tokens.map((tok) => {
-          const { tag, weight } = parseTagWeight(tok);
-          let core = tag;
-          if (replaceUnderscores) core = core.replace(/_/g, " ");
-          if (escapeParentheses) core = core.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-          return formatTagWeight(core, weight);
-        }).join(", ");
-      }
-
-      // 휠로 특정 토큰의 가중치를 delta(±0.1)만큼 조절하고 final_prompt 갱신.
-      // idx 는 data.final_prompt 분해 배열에서의 위치(중복 태그 안전하게 위치 기반).
-      function bumpTagWeight(idx, delta) {
-        if (!currentResultData || !currentResultData.final_prompt) return;
-        const tokens = currentResultData.final_prompt.split(", ").filter(t => t.trim() !== "");
-        if (idx < 0 || idx >= tokens.length) return;
-        const { tag, weight } = parseTagWeight(tokens[idx]);
-        let w = Math.round((weight + delta) * 10) / 10;
-        if (w < weightFloor()) w = weightFloor();   // 로컬 하한 0.1 / NAI 음수 허용
-        // 내부 상태는 항상 로컬 표기로 저장(NAI 변환은 표시/복사 시 formatTagWeight 가).
-        tokens[idx] = _localWeightToken(tag, w);
-        currentResultData.final_prompt = tokens.join(", ");
-        syncFinalEditFromData();        // textarea 동기화
-        displayResults();               // 뱃지 재렌더(가중치 표시 갱신)
-      }
-
-      // 단어형+(phrase) 출력을 danbooru 그리드처럼 뱃지로 렌더한다.
-      // danbooru 와 차이: 카테고리 색(tag-cat-N) 미적용(키워드 뱃지 스타일), 가중치
-      // 상태는 currentNlPhraseString 에만 저장(final_prompt 와 분리).
-      function renderNlPhraseBadges(phraseString) {
-        currentNlPhraseString = phraseString || "";
-        const c = document.getElementById("res_nl_prompt");
-        c.classList.add("tag-list");
-        c.innerHTML = "";
-        const tokens = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
-        if (tokens.length === 0) {
-          c.innerHTML = '<span style="color: var(--dim); font-size: 13px;">생성된 구가 없습니다.</span>';
-          return;
-        }
-        tokens.forEach((token, idx) => {
-          const el = document.createElement("span");
-          el.className = "tag deletable nl-phrase-badge";
-          const { tag: core, weight } = parseTagWeight(token);
-          el.textContent = formatTagWeight(core, weight);  // 구는 치환/이스케이프 미적용(자연어)
-          if (Math.abs(weight - 1.0) > 1e-9) el.classList.add("weighted");
-          el.setAttribute("data-tooltip", "휠: 가중치 ±0.1 · 클릭: 삭제");
-          // 클릭 삭제 (위치 기반)
-          el.onclick = () => {
-            const toks = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
-            toks.splice(idx, 1);
-            renderNlPhraseBadges(toks.join(", "));
-          };
-          // 휠 가중치 (호버 중)
-          el.addEventListener("wheel", (e) => {
-            e.preventDefault();
-            bumpNlPhraseWeight(idx, e.deltaY < 0 ? 0.1 : -0.1);
-          }, { passive: false });
-          c.appendChild(el);
-        });
-      }
-
-      // 단어형+ 뱃지의 가중치를 delta(±0.1)만큼 조절. final_prompt 와 무관하게
-      // currentNlPhraseString 만 갱신 후 재렌더.
-      function bumpNlPhraseWeight(idx, delta) {
-        const tokens = currentNlPhraseString.split(", ").filter(t => t.trim() !== "");
-        if (idx < 0 || idx >= tokens.length) return;
-        const { tag, weight } = parseTagWeight(tokens[idx]);
-        let w = Math.round((weight + delta) * 10) / 10;
-        if (w < weightFloor()) w = weightFloor();
-        // 내부 상태는 항상 로컬 표기로 저장(표시 시 renderNlPhraseBadges 가 NAI 변환).
-        tokens[idx] = _localWeightToken(tag, w);
-        renderNlPhraseBadges(tokens.join(", "));
-      }
-
-      // final_prompt(데이터) → textarea 표시. textarea 는 DB 태그만(고정태그 제외).
-      function syncFinalEditFromData() {
-        const ta = document.getElementById("final_prompt_edit");
-        if (!ta) return;
-        // textarea 가 포커스 중이면 사용자가 타이핑 중일 수 있으니 덮어쓰지 않음.
-        if (document.activeElement === ta) return;
-        ta.value = (currentResultData && currentResultData.final_prompt) || "";
-      }
-
-      // textarea 입력 → final_prompt(데이터) 갱신. 입력 중에는 뱃지 재렌더 안 함(커서 보존).
-      function onFinalEditInput() {
-        const ta = document.getElementById("final_prompt_edit");
-        if (!ta || !currentResultData) return;
-        // 쉼표 구분 그대로 저장(가중치 표기 (tag:1.2) 포함 가능). 빈 토큰 정리.
-        const tokens = ta.value.split(",").map(t => t.trim()).filter(Boolean);
-        currentResultData.final_prompt = tokens.join(", ");
-      }
-
-      // textarea blur → 정규화된 값으로 뱃지 재렌더 + textarea 재동기화.
-      function onFinalEditBlur() {
-        // 드롭다운 항목 클릭(mousedown)이 blur보다 먼저 처리되도록 약간 지연 후 닫기.
-        setTimeout(hideAc, 150);
-        onFinalEditInput();
-        displayResults();
-      }
-
-      // ── 자동완성 UI ───────────────────────────────────────────────
-      // ── 드롭다운 UI (anima-webgpu 포팅, textarea 1개) ──
-      // 기존 onFinalEditInput(상태/뱃지 동기화)은 그대로 호출하고, 자동완성은 이쪽이 담당.
-      function makeAutocomplete(taId, popId) {
-        const ta = document.getElementById(taId);
-        const pop = document.getElementById(popId);
-        if (!ta || !pop) return;
-        let items = [];
-        let active = -1;
-        let token = null;
-        let debounce = 0;
-
-        function close() {
-          pop.innerHTML = "";
-          pop.style.display = "none";
-          items = []; active = -1; token = null;
-        }
-        function render() {
-          if (!items.length) { close(); return; }
-          const q = token ? token.query : "";
-          pop.innerHTML = items.map((r, i) => {
-            const aliasHtml = r.alias ? `<span class="ac-alias">${acHighlight(r.alias, q)}</span>` : "";
-            const catHtml = r.cat ? `<span class="ac-badge ac-badge-cat">${acEscape(r.cat)}</span>` : "";
-            return (
-              `<div class="ac-item${i === active ? " active" : ""}" data-i="${i}">` +
-              `<div class="ac-row1">` +
-              `<span class="ac-tag">${acHighlight(r.tag.replace(/_/g, " "), q)}</span>` +
-              `<span class="ac-count">${acFmtCount(r.pc)}</span>` +
-              `</div>` +
-              `<div class="ac-row2">${catHtml}${aliasHtml}</div>` +
-              `</div>`
-            );
-          }).join("");
-          pop.style.display = "block";
-          [...pop.children].forEach((el) => {
-            el.onmousedown = (e) => { e.preventDefault(); choose(+el.dataset.i); };
-          });
-          scrollActiveIntoView();
-        }
-        function scrollActiveIntoView() {
-          if (active < 0) return;
-          const el = pop.children[active];
-          if (el) el.scrollIntoView({ block: "nearest" });
-        }
-        // 선택 → 영어 태그를 현재 토큰 단어부에 치환(언더스코어 유지). 뱃지 동기화.
-        function choose(i) {
-          const r = items[i];
-          if (!r || !token) return close();
-          const before = ta.value.slice(0, token.wordStart);
-          const after = ta.value.slice(token.wordEnd);
-          const tagOut = r.tag;   // danbooru 태그는 언더스코어 유지(뱃지가 표기 설정 반영)
-          const trimmedAfter = after.replace(/^\s*/, "");
-          const needsComma = !trimmedAfter.startsWith(",");
-          const insert = tagOut + (needsComma ? ", " : "");
-          const newCaret = before.length + insert.length;
-          ta.value = before + insert + after;
-          ta.setSelectionRange(newCaret, newCaret);
-          ta.focus();
-          close();
-          if (typeof onFinalEditInput === "function") onFinalEditInput();
-        }
-        function update() {
-          if (!ac.ready) { acEnsureLoaded(); return; }
-          const caret = ta.selectionStart;
-          token = acCurrentToken(ta.value, caret);
-          const q = token.query;
-          if (!q || q.length < 1) { close(); return; }
-          items = acSearch(q);
-          active = items.length ? 0 : -1;
-          render();
-        }
-
-        ta.addEventListener("input", () => {
-          clearTimeout(debounce);
-          debounce = setTimeout(update, 150);
-        });
-        ta.addEventListener("keydown", (e) => {
-          if (!items.length) return;
-          if (e.key === "ArrowDown") { e.preventDefault(); active = (active + 1) % items.length; render(); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); }
-          else if (e.key === "Enter" || e.key === "Tab") { if (active >= 0) { e.preventDefault(); choose(active); } }
-          else if (e.key === "Escape") { e.preventDefault(); close(); }
-        });
-        ta.addEventListener("blur", () => setTimeout(close, 120));
-        ta.addEventListener("click", () => { clearTimeout(debounce); debounce = setTimeout(update, 150); });
-      }
-
-      function parsePassthroughNames() {
-        if (!currentResultData || !Array.isArray(currentResultData.characters)) return [];
-        const out = [];
-        currentResultData.characters.forEach((ch) => {
-          if (ch && ch.is_passthrough && ch.name && ch.name.trim()) {
-            const nm = ch.name.trim();
-            if (!out.includes(nm)) out.push(nm);
-          }
-        });
-        return out;
-      }
-
-      // 패스스루 이름에 DB 태그와 동일한 치환/이스케이프를 적용(태그 슬롯에 들어가므로).
-      function passthroughForCopy() {
-        const replaceUnderscores = document.getElementById("replace_underscores").checked;
-        const escapeParentheses = document.getElementById("escape_parentheses").checked;
-        return parsePassthroughNames().map((nm) => {
-          let t = nm;
-          if (replaceUnderscores) t = t.replace(/_/g, " ");
-          if (escapeParentheses) t = t.replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-          return t;
-        });
-      }
-
-      // 위치(앞/뒤)와 우선순위에 따라 고정태그(퀄리티/작가) 슬롯을 구성한다.
-      // 패스스루(신규 캐릭터)는 danbooru 블록 맨앞 붙박이라 mid 앞에 결합한다.
-      //   결과: [앞 슬롯(우선순위순)] + [패스스루 + danbooru] + [뒤 슬롯(우선순위순)]
-      function fixedSlots() {
-        const q = parseFixedQuality();
-        const a = parseFixedArtist();
-        // 우선순위: 같은 위치일 때 먼저 올 것을 앞에 둔다.
-        const order = fixedPriority === "artist"
-          ? [["artist", a], ["quality", q]]
-          : [["quality", q], ["artist", a]];
-        const front = [], back = [];
-        order.forEach(([which, tags]) => {
-          (fixedPos[which] === "back" ? back : front).push(...tags);
-        });
-        return { front, back };
-      }
-      function withFixedTags(dbTagString) {
-        const { front, back } = fixedSlots();
-        const pt = passthroughForCopy();   // danbooru 블록 맨앞 붙박이
-        const mid = (dbTagString || "").split(", ").map(t => t.trim()).filter(Boolean);
-        return [...front, ...pt, ...mid, ...back].join(", ");
-      }
-      // 고정 태그 입력이 바뀌면 결과 영역 다시 렌더
-      function refreshFixedTags() {
-        if (currentResultData && currentResultData.final_prompt) displayResults();
-      }
-
-      function copyToClipboard(elementId) {
-        let text = "";
-        if (elementId === "res_final_prompt") {
-          const replaceUnderscores = document.getElementById("replace_underscores").checked;
-          const escapeParentheses = document.getElementById("escape_parentheses").checked;
-          // DB 태그에만 치환/이스케이프 적용(가중치 표기는 보존), 고정 태그는 원형 유지
-          let dbTags = applyTagFormatting(
-            currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
-          );
-          text = withFixedTags(dbTags);
-        } else if (elementId === "res_nl_prompt" && currentNlTone === "phrase" && currentNlPhraseString) {
-          // 단어형+ 뱃지 모드: textContent(뱃지 텍스트)가 아니라 가중치 문자열을 복사.
-          text = currentNlPhraseString;
-        } else {
-          text = document.getElementById(elementId).textContent;
-        }
-
-        doCopy(text, () => {
-          const box = document.getElementById(elementId).closest(".result-box");
-          const btn = box.querySelector(".copy-btn");
-          const originalText = btn.textContent;
-          const originalBg = btn.style.background;
-          const originalColor = btn.style.color;
-
-          btn.textContent = "복사 완료!";
-          btn.style.color = "#0b0e14";
-          btn.style.borderColor = "var(--primary)";
-          btn.style.background = "var(--primary)";
-
-          setTimeout(() => {
-            btn.textContent = originalText;
-            btn.style.color = originalColor;
-            btn.style.borderColor = "";
-            btn.style.background = originalBg;
-          }, 2000);
-        });
-      }
-
-      function copyAll() {
-        const replaceUnderscores = document.getElementById("replace_underscores").checked;
-        const escapeParentheses = document.getElementById("escape_parentheses").checked;
-        let dbTags = applyTagFormatting(
-          currentResultData.final_prompt || "", replaceUnderscores, escapeParentheses
-        );
-        let finalTags = withFixedTags(dbTags);
-        // 단어형+ 뱃지 모드면 가중치 문자열, 아니면 평문 textContent.
-        const nlPrompt = (currentNlTone === "phrase" && currentNlPhraseString)
-          ? currentNlPhraseString.trim()
-          : document.getElementById("res_nl_prompt").textContent.trim();
-        
-        let combined = "";
-        if (finalTags && finalTags !== "매칭된 태그가 없습니다." && nlPrompt) {
-          combined = finalTags + ". " + nlPrompt;
-        } else if (finalTags && finalTags !== "매칭된 태그가 없습니다.") {
-          combined = finalTags;
-        } else if (nlPrompt) {
-          combined = nlPrompt;
-        }
-
-        if (!combined) return;
-
-        doCopy(combined, () => {
-          const btn = document.getElementById("copy_all_btn");
-          const originalText = "모두 복사하기 (단보루 태그 + 자연어)";
-          const originalBg = btn.style.background;
-          const originalColor = btn.style.color;
-
-          btn.textContent = "모두 복사 완료!";
-          btn.style.color = "#0b0e14";
-          btn.style.borderColor = "var(--primary)";
-          btn.style.background = "var(--primary)";
-
-          setTimeout(() => {
-            btn.textContent = originalText;
-            btn.style.color = originalColor;
-            btn.style.borderColor = "";
-            btn.style.background = originalBg;
-          }, 2000);
-        });
-      }
-    </script>
     <!-- 동일 IP 중복요청 거절 모달 -->
-    <div id="dup_modal" class="dup-modal-overlay" style="display:none;">
-      <div class="dup-modal-box">
+    <div id="dup_modal" class="dup-modal-overlay" hidden>
+      <div class="dup-modal-box" role="alertdialog" aria-labelledby="dup_modal_title">
         <div class="dup-modal-icon">🚫</div>
-        <h3 class="dup-modal-title">요청이 거절되었습니다</h3>
+        <h3 class="dup-modal-title" id="dup_modal_title">요청이 거절되었습니다</h3>
         <p id="dup_modal_msg" class="dup-modal-msg">동일 IP로 처리 중인 작업이 있습니다.</p>
         <p class="dup-modal-sub">이전 작업이 끝난 뒤 다시 시도해주세요.</p>
-        <button type="button" class="dup-modal-btn" onclick="closeDuplicateModal()">확인</button>
+        <button type="button" class="dup-modal-btn">확인</button>
       </div>
     </div>
   </body>

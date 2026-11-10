@@ -2,7 +2,7 @@
 LLM 모듈
 
 로컬 LLM(llama.cpp 등 OpenAI 호환 엔드포인트) 호출 함수들.
-pipeline 과 benchmark 양쪽에서 재사용한다.
+구조화 호출(_call_json: 분해·선택)은 pipeline_structured, 자연어·단어형·캐릭터 선택은 두 파이프라인이 함께 쓴다.
 
 모든 함수는 thinking off, 낮은 temperature(변별 작업) 전제로 설계되었으나
 temperature 는 인자로 조절 가능하다. 자연어 생성만 약간 높은 temperature 권장.
@@ -18,6 +18,7 @@ from .config import (
     LLM_API_URL,
     LLM_MODEL,
     LLM_THINKING_ENABLED,
+    LLM_CACHE_PROMPT,
 )
 from .exceptions import LLMError
 
@@ -27,36 +28,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 시스템 프롬프트
 # ---------------------------------------------------------------------------
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_KEYWORDS = """You are an expert anime illustration tag extractor.
-Convert the Korean prompt into a JSON array of specific English keywords.
-Break down visual elements: character count, hair/eye traits, clothing, actions, objects, background.
-Prefer concrete Danbooru-style phrasing (e.g. '1girl', 'blue hair', 'school uniform').
-Return ONLY a valid JSON array of strings. No markdown, no extra text.
-Example: ["1girl", "blue hair", "school uniform", "rain", "street"]"""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_REFINE = """You are a Danbooru tag matching assistant.
-Given a Korean intent and a list of candidate Danbooru tags retrieved from a database,
-select and refine the English tag expressions that best match the user's actual intent.
-The candidates are real tags from the database; prefer them, but you may adjust wording
-to better English tag form if needed.
-Return ONLY a valid JSON array of English strings. No markdown, no extra text."""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_SELECT = """You are a strict Danbooru tag selector.
-Given a Korean intent and structured candidate tags (with categories),
-choose the final set of tags that faithfully represent the intent.
-
-CRITICAL: You may ONLY output tags that appear VERBATIM in the candidate list.
-Never invent, complete, normalize, or modify a tag. If the intent is "은발"
-(silver hair) and the candidate list contains "grey_hair" but not "silver_hair",
-you MUST output "grey_hair" — outputting "silver_hair" is forbidden because it is
-not in the candidates. Copy tags exactly as given, character for character.
-
-Exclude tags pulled in only by vector similarity but not actually described.
-Return ONLY a valid JSON array of the chosen English tag strings. No markdown."""
-
+# SYSTEM_NL 규칙 3 (2026-11-08): 전에는 캐릭터 태그가 없으면 무조건 'A girl' 등으로 시작하게 해서,
+# 사람 없는 장면(풍경·사물·표정만)에도 사람과 성별을 지어냈다(운영 로그 표본 e10 n=61·80·84).
+# 인원수 태그가 있을 때만 사람 명사로 시작하고, 없으면 사람·성별을 만들지 않게 바꿨다.
+# 리허설(rich 톤, 문장마다 3회): e10 인원수 태그 없는 문장 성별 낱말 없음 48→57/57,
+# 사람 없는 개발 문장 21→24/24, 인원수 태그 있는 문장의 사람 명사 시작 49→50/51(대조군 유지).
 SYSTEM_NL = """You are a prompt writer for the ANIMA image generation model.
 Given a Korean intent and English keywords, write a natural-language English prompt that conveys the keywords.
 Rules:
@@ -66,15 +42,10 @@ Rules:
    - Without series (bare name tag): start "<Name>, ...".
    - The word "from" linking a character to its series must always be kept, regardless of tone.
    - If MULTIPLE character tags are present, open with each character (name first, then appearance), one per clause.
-3. If NO character tag is present, use a plain noun like 'A girl', 'A boy', 'A man', 'A woman' to open, then appearance.
+3. If NO character tag is present: when the keywords have a person count tag (1girl, 2boys, 1other ...), open with a matching plain noun like 'A girl', 'A boy', 'A man', 'A woman', then appearance. When they have none, never invent a person or a gender; describe only what the keywords show.
 4. Standard capitalization for character/series names; convert tag underscores to spaces in the prose.
 {TONE_RULES}
 Return ONLY the raw prompt text. No markdown, no explanations."""
-
-# [DEPRECATED — 실배포 미사용] 구버전 2-pass(pipeline.py)/benchmark 전용. 4-step 본선은 llm_decompose 의 프롬프트를 쓴다. 정리 시 benchmark 의존성 확인 필요.
-SYSTEM_VERIFY = """You are a strict tag reviewer for Danbooru tags.
-Identify tags from the 'Matched Tags' list that are unrelated to the 'Korean Intent'.
-Return ONLY a JSON array of suspicious tag strings. Empty array [] if all are fine. No markdown."""
 
 # ── 분할입력(고급) 전용: 캐릭터/작품 태그 선택 ──
 # 사용자가 입력한 캐릭터명·작품명과, DB 검색으로 얻은 후보군을 함께 주고
@@ -108,6 +79,10 @@ Return ONLY a JSON object, no markdown:
 # 따라서 각 인물마다 [이름(+작품)] + [외형/속성 묘사]를 반드시 한 덩어리로 붙여 쓴다.
 # 캐릭터명이 DB에 없어 태그가 안 잡힌 경우에도 사용자가 적은 이름 문자열을 그대로
 # 살려 쓰되, 그 칸의 묘사 태그로 외형을 채운다(이름만 덩그러니 두지 않는다).
+# 규칙 3 (2026-11-08): 전에는 [original] 칸에 임의 이름("Ren", "Yuna", "Mina" ...)을 지어 붙이게 했는데,
+# 사용자가 적지 않은 이름이 프롬프트에 들어가는 문제가 있었다(운영 로그 표본 e10 n=4·7·16·17·19).
+# 이름 없이 외형 명사로 부르고, 여럿이면 눈에 띄는 외형으로 구분하게 바꿨다.
+# 리허설(문장마다 3회, 개발 4 + e10 고급 모드 23건): 지어낸 이름 없음 60→81/81, 대조군(입력 이름) 유지.
 SYSTEM_NL_MULTI = """You are an expert prompt engineer for the ANIMA anime image generation model.
 
 You are given a SCENE made of one or more CHARACTER blocks and an optional BACKGROUND block. Write a single descriptive English prompt for the whole scene.
@@ -121,7 +96,7 @@ Describe each character in its own SEPARATE sentence. Do NOT pack multiple chara
 RULES:
 1. Write each character as its own clause/sentence: "<Name> from <Series>, with <appearance woven from the tags>, ...". If a character has a series, include it once.
 2. If a block has a name but NO matched tags, still use the name and describe whatever the block's description implies — do not drop the character. A block marked with the [new] flag is a new/unlisted character: use its given name as-is as the character handle even though no canon tags matched.
-3. If a block is marked with the [original] flag, it has no canon name AND no series. Invent a simple fitting first name for that character and use it the same way (name first, then appearance). NEVER invent or attach a series/work to an original character, and NEVER use the word "from" for it — an original character is not "from" anything. Write just the invented name followed by the appearance (e.g. "Aria, with long silver hair, ..."). This gives the model a stable handle so it does not confuse this character with others.
+3. If a block is marked with the [original] flag, it has no canon name AND no series. Do NOT invent a name for it: open with a plain noun consistent with the description (e.g. "A silver-haired girl", "A young man"), then the appearance. NEVER attach a series/work to an original character, and NEVER use the word "from" for it. When there are several such characters, tell them apart by a distinctive visible trait (e.g. "the silver-haired girl", "the boy in the hoodie").
 4. If a block has NO name and is not original, use a plain noun ("A girl", "A boy", "A figure") consistent with the description, then the appearance.
 5. Keep every character visually distinct so the model can separate them. Do not merge two characters' attributes into the same sentence.
 6. End with the background/setting as a shared clause if a BACKGROUND block is given.
@@ -230,23 +205,87 @@ async def _call(system: str, user: str, temperature: float, timeout: float = 120
             raise LLMError(f"LLM 호출 실패: {e}")
 
 
-def _extract_json_array(content: str) -> list[str]:
-    """응답에서 JSON 문자열 배열을 추출. 실패 시 빈 리스트.
-
-    모델이 JSON 배열을 출력한 뒤 평문 자기검토를 덧붙이는 경우가 있다(실측:
-    '[...] (Wait, X is not in the pool...)' 식). 그 검토문에도 대괄호가 섞이면
-    greedy 매칭이 첫 '['부터 뒤쪽 ']'까지 통째로 삼켜 파싱이 깨진다.
-    → 평면 배열 후보(중첩 대괄호 없음)들을 순서대로 찾아, 유효한 '문자열 배열'을
-      처음 만나는 즉시 반환한다(보통 맨 앞 진짜 답).
+async def _call_json(
+    system: str, user: str, schema: dict, name: str,
+    temperature: float = 0.0, seed: int = 1234, timeout: float = 180.0,
+) -> dict:
     """
-    for cand in re.findall(r'\[[^\[\]]*\]', content, re.DOTALL):
+    JSON 스키마 강제 호출 (structured 파이프라인 전용, 기존 _call 과 별개).
+
+    - response_format=json_schema: llama.cpp 가 스키마 문법으로 디코딩을 제한한다
+      (코드펜스·뒷말 없이 스키마에 맞는 JSON 만 나옴. 서버 b12004 에서 확인).
+    - thinking 은 항상 끈다: 선택 프롬프트(~2천 토큰)에서 사고가 6천 토큰을 넘겨
+      슬롯 컨텍스트 8192 를 다 쓰고 본문이 비는 실패가 40% 나왔다(벤치 실측).
+    - temperature 0 + 고정 seed. 프롬프트 캐시는 config.LLM_CACHE_PROMPT(기본 켬):
+      켜면 시스템 프롬프트를 다시 처리하지 않아 호출당 3~5초 빠르다(이 서버는 프롬프트 처리 ~150~200 tok/s).
+      대신 같은 입력 두 번 실행이 분해 8/10·선택 9/10 만 동일(점수는 같음). 끄면 10/10 동일(벤치 실측).
+    - 캐시를 켠 호출에서 드물게(벤치 69회 중 1회, 영어 입력) 스키마를 벗어난 혼잣말이 출력 한도까지 반복됐다.
+      같은 입력을 캐시 끄고 보내면 정상 → 응답이 비거나·JSON 이 깨지거나·한도에 걸리면 캐시를 끄고 1회 재시도.
+    - 출력 한도 512: 분해·선택 출력은 100토큰 안팎이라 충분하고, 실패 시 낭비 시간을 줄인다(~38 tok/s).
+    - 그래도 실패하고 temperature 가 0 이면, 캐시를 끄고 온도 RETRY_TEMPERATURE 로 seed+1, seed+2, seed+3 을
+      차례로 보낸다(seed 고정이라 같은 서버에서는 재현된다).
+      2026-11-08 "눈물을 참으며 억지로 웃는 표정": 온도 0 에서 모델이 쌍 문자열 안에 닫는 기호를 쓰려는
+      붕괴 경로로 가고, 스키마 패턴(llm_structured.TEXT_PATTERN)이 그 문자를 막으면 llama.cpp 가
+      500("does not match the expected peg-gemma4 format")을 매번 냈다. 온도 0 이면 seed·캐시와 관계없이 같은 경로다.
+      seed 10개 성공률(로컬 b12192): 온도 0.3 7/10, 0.5 8/10, 0.7 7/10(+전각 괄호 섞인 붕괴 2). 그래서 0.5 로 3회.
+      실패한 호출에만 타는 경로라 정상 호출의 출력은 바뀌지 않는다.
+    """
+    try:
+        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, LLM_CACHE_PROMPT)
+    except LLMError as e:
+        if LLM_CACHE_PROMPT:
+            logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
+            try:
+                return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)
+            except LLMError as e2:
+                e = e2
+        if temperature > 0:
+            raise e
+        for k in range(1, RETRY_SEEDS + 1):
+            logger.warning(f"구조화 호출 실패 → 온도 {RETRY_TEMPERATURE}, seed {seed + k} 로 재시도 ({name}): {e}")
+            try:
+                return await _call_json_once(system, user, schema, name, RETRY_TEMPERATURE, seed + k, timeout, False)
+            except LLMError as e3:
+                e = e3
+        raise e
+
+
+RETRY_TEMPERATURE = 0.5  # _call_json 의 마지막 재시도 온도·횟수 (위 docstring)
+RETRY_SEEDS = 3
+
+
+async def _call_json_once(system, user, schema, name, temperature, seed, timeout, cache_prompt) -> dict:
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": temperature,
+        "top_p": 1.0,
+        "max_tokens": 512,
+        "thinking_budget_tokens": 0,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "cache_prompt": cache_prompt,
+        "seed": seed,
+        "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            arr = json.loads(cand)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(arr, list) and all(isinstance(x, str) for x in arr):
-            return arr
-    return []
+            resp = await client.post(LLM_API_URL, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            raise LLMError(f"LLM 호출 실패: {e}")
+    choice = data["choices"][0]
+    content = (choice["message"].get("content") or "").strip()
+    finish = choice.get("finish_reason")
+    if not content or finish == "length":
+        raise LLMError(f"LLM 응답 본문 없음 또는 출력 한도 (finish={finish}, usage={data.get('usage')})")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        raise LLMError(f"LLM JSON 파싱 실패: {e}; 앞부분={content[:200]!r}")
 
 
 def _strip_markdown(text: str) -> str:
@@ -290,49 +329,6 @@ def _strip_meta_leak(text: str) -> str:
 # ---------------------------------------------------------------------------
 # 단계별 함수
 # ---------------------------------------------------------------------------
-async def extract_keywords(korean_prompt: str, temperature: float = 0.1) -> list[str]:
-    """[Pass 1 전처리] 한국어 → 영어 키워드 배열."""
-    content = await _call(SYSTEM_KEYWORDS, korean_prompt, temperature)
-    kws = _extract_json_array(content)
-    if not kws:
-        raise LLMError(f"키워드 추출 실패. 응답: {content[:200]}")
-    return kws
-
-
-async def refine_with_candidates(
-    korean_prompt: str,
-    candidate_tags: list[str],
-    temperature: float = 0.1,
-) -> list[str]:
-    """
-    [2-pass 핵심] 후보 태그를 보여주고 영어 의도표현으로 정제.
-    '번역→태그'가 아니라 '태그 보고 의도 매핑' (mode collapse 회피).
-    """
-    user = (
-        f"Korean intent: {korean_prompt}\n"
-        f"Candidate tags from DB: {', '.join(candidate_tags)}"
-    )
-    content = await _call(SYSTEM_REFINE, user, temperature)
-    return _extract_json_array(content)
-
-
-async def select_final(
-    korean_prompt: str,
-    grouped_candidates: dict[str, list[str]],
-    temperature: float = 0.1,
-) -> list[str]:
-    """
-    [최종 선택] 카테고리 구조화된 후보 중 의도에 맞는 것 선택.
-    grouped_candidates 예: {"general": [...], "character": [...], "copyright": [...]}
-    """
-    lines = [f"Korean intent: {korean_prompt}", "Candidates by category:"]
-    for label, tags in grouped_candidates.items():
-        if tags:
-            lines.append(f"  [{label}] {', '.join(tags)}")
-    content = await _call(SYSTEM_SELECT, "\n".join(lines), temperature)
-    return _extract_json_array(content)
-
-
 async def generate_nl_prompt(
     korean_prompt: str,
     keywords: list[str],
@@ -356,22 +352,6 @@ async def generate_nl_prompt(
         return ""  # 자연어는 보조 수단이라 실패해도 전체를 막지 않음
 
 
-async def verify_tags(
-    korean_prompt: str,
-    tags: list[str],
-    temperature: float = 0.1,
-) -> list[str]:
-    """[검증] 의도와 무관한 의심 태그 식별 (제거가 아니라 표시용)."""
-    if not tags:
-        return []
-    user = f"Korean intent: {korean_prompt}\nMatched tags: {', '.join(tags)}"
-    try:
-        content = await _call(SYSTEM_VERIFY, user, temperature)
-        return _extract_json_array(content)
-    except LLMError:
-        return []  # 검증 실패는 무시 (보조 기능)
-
-
 async def select_character_and_series(
     user_name: str,
     user_series: str,
@@ -392,8 +372,10 @@ async def select_character_and_series(
         lines = []
         for c in cands:
             al = ", ".join(c.get("aliases", [])[:6])
+            # score=None: 벡터 검색이 아니라 이름(별칭·태그 본체) 정확 일치로 찾은 후보 (search.exact_name_lookup)
+            sc = "exact name match" if c.get("score") is None else f'score={c["score"]:.3f}'
             lines.append(
-                f'- {c["tag"]} (score={c.get("score", 0):.3f}'
+                f'- {c["tag"]} ({sc}'
                 + (f', aliases=[{al}]' if al else "")
                 + ")"
             )
@@ -435,150 +417,6 @@ async def select_character_and_series(
     return char_tag, series_tag
 
 
-# ── 일반 모드 캐릭터 추출(2단계) ──────────────────────────────────
-# 일반 모드는 캐릭터명을 별도 필드로 받지 않으므로, 한 문장에서 (작품?, 캐릭터) 쌍을
-# 추출해 cat3/cat4 검색 후 일괄 판별한다. split 의 인물칸 입력을 LLM 추출로 대체한 것.
-SYSTEM_EXTRACT_PAIRS = """You extract character mentions from a Korean image-generation prompt.
-
-Find every specific, NAMED character a user wants drawn. For each, output the character name and (if the prompt mentions it) the series/work it belongs to.
-
-RULES:
-1. Only extract NAMED characters (a proper name like "라이덴 쇼군", "프리렌", "Hatsune Miku"). Do NOT extract generic people ("여자", "소녀", "a girl", "남자 둘") — those are not characters.
-2. series is OPTIONAL. Include it only if the prompt actually names the work (e.g. "원신", "장송의 프리렌"). If no work is mentioned, use an empty string.
-3. Keep names as the user wrote them (Korean or English), do not translate or normalize.
-4. If the prompt contains NO named character, return an empty array.
-
-Return ONLY a JSON array, no markdown:
-[{"character": "<name>", "series": "<series or empty>"}]
-Example input: "원신 라이덴 쇼군이랑 프리렌이 비 오는 거리에서"
-Example output: [{"character": "라이덴 쇼군", "series": "원신"}, {"character": "프리렌", "series": ""}]"""
-
-
-async def extract_character_pairs(
-    korean_prompt: str,
-    temperature: float = 0.0,
-) -> list[dict]:
-    """
-    [일반 모드 1단계] 한국어 프롬프트에서 (작품?, 캐릭터) 쌍 배열 추출.
-
-    Returns: [{"character": str, "series": str}, ...]  — 없으면 빈 배열.
-    빈 배열이면 호출측이 기존 4-step 만 태운다(오버헤드 최소).
-    """
-    if not korean_prompt.strip():
-        return []
-    try:
-        content = await _call(SYSTEM_EXTRACT_PAIRS, korean_prompt, temperature)
-    except LLMError:
-        return []
-    txt = _strip_markdown(content)
-    import json, re as _re
-    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
-    if not m:
-        return []
-    try:
-        arr = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return []
-    out = []
-    for item in arr if isinstance(arr, list) else []:
-        if not isinstance(item, dict):
-            continue
-        name = (item.get("character") or "").strip()
-        series = (item.get("series") or "").strip()
-        if name:
-            out.append({"character": name, "series": series})
-    return out
-
-
-SYSTEM_SELECT_PAIRS = """You select the correct Danbooru character tags for several character mentions at once.
-
-You are given a list of PAIRS. Each pair has:
-- the user's intended CHARACTER name (as typed),
-- the user's intended SERIES name (may be empty),
-- CHARACTER_CANDIDATES and SERIES_CANDIDATES retrieved from the DB for THAT pair (each with score and aliases).
-
-For EACH pair, pick the single best character tag from that pair's CHARACTER_CANDIDATES.
-
-RULES:
-1. Choose ONLY from that pair's provided candidates. Never invent a tag. If nothing fits, use empty string for that pair.
-2. The user's intent dominates the vector score. A lower-scored candidate that matches the user's stated name/series beats a higher-scored mismatch.
-3. If a SERIES is given for the pair, prefer the character candidate whose "name_(series)" matches that series.
-4. Disambiguate within the same series by the NAME the user typed (e.g. "프리렌"/"frieren" -> "frieren", NOT a side character like "linie_(sousou_no_frieren)").
-5. Match across languages and aliases (Korean vs English vs alias).
-6. If the user's character is clearly not among that pair's candidates, return "" for it (do not force a wrong pick).
-
-Return ONLY a JSON array, one object per input pair IN THE SAME ORDER, no markdown:
-[{"character": "<tag or empty>"}]"""
-
-
-async def select_character_pairs(
-    pairs: list[dict],
-    temperature: float = 0.0,
-) -> list[str]:
-    """
-    [일반 모드 2단계] 여러 (작품?, 캐릭터) 쌍을 한 번에 판별.
-
-    pairs 각 원소: {
-        "character": str, "series": str,
-        "char_candidates": [{"tag","score","aliases"}...],
-        "series_candidates": [{"tag","score","aliases"}...],
-    }
-    Returns: 입력 순서대로 character_tag 리스트(못 고르면 "").
-             작품 태그는 일반 모드에선 최종/NL 모두 미사용이므로 반환하지 않음.
-    """
-    if not pairs:
-        return []
-
-    def _fmt(cands: list[dict]) -> str:
-        lines = []
-        for c in (cands or []):
-            al = ", ".join((c.get("aliases") or [])[:6])
-            lines.append(
-                f'- {c["tag"]} (score={c.get("score", 0):.3f}'
-                + (f', aliases=[{al}]' if al else "")
-                + ")"
-            )
-        return "\n".join(lines) if lines else "(none)"
-
-    blocks = []
-    for i, p in enumerate(pairs):
-        blocks.append(
-            f'PAIR {i}:\n'
-            f'  CHARACTER name: "{p.get("character","")}"\n'
-            f'  SERIES name: "{p.get("series","")}"\n'
-            f'  CHARACTER_CANDIDATES:\n{_fmt(p.get("char_candidates"))}\n'
-            f'  SERIES_CANDIDATES:\n{_fmt(p.get("series_candidates"))}'
-        )
-    user = "\n\n".join(blocks)
-
-    try:
-        content = await _call(SYSTEM_SELECT_PAIRS, user, temperature)
-    except LLMError:
-        return ["" for _ in pairs]
-
-    txt = _strip_markdown(content)
-    import json, re as _re
-    m = _re.search(r"\[.*\]", txt, _re.DOTALL)
-    if not m:
-        return ["" for _ in pairs]
-    try:
-        arr = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return ["" for _ in pairs]
-
-    out = []
-    for i, p in enumerate(pairs):
-        tag = ""
-        if isinstance(arr, list) and i < len(arr) and isinstance(arr[i], dict):
-            tag = (arr[i].get("character") or "").strip()
-        # 환각 방지: 해당 쌍 후보에 실제 존재하는 태그만
-        cand_set = {c["tag"] for c in (p.get("char_candidates") or [])}
-        if tag not in cand_set:
-            tag = ""
-        out.append(tag)
-    return out
-
-
 async def generate_nl_multi(
     characters: list[dict],
     background_tags: list[str] | None = None,
@@ -607,7 +445,7 @@ async def generate_nl_multi(
     for i, ch in enumerate(characters, 1):
         parts = [f"CHARACTER {i}:"]
         if ch.get("is_original"):
-            # 오리지널 캐릭터: 작품/캐릭터명 없음. LLM이 임의 이름을 지어 붙인다.
+            # 오리지널 캐릭터: 작품/캐릭터명 없음. 이름을 지어내지 않고 외형 명사로 부른다(2026-11-08, 전에는 임의 이름).
             # 단축 플래그로 전달(장황 안내문이 NL 에 베껴지는 누수 방지). 의미는
             # SYSTEM_NL_MULTI RULE 3/10 이 정의한다.
             parts.append("[original]")

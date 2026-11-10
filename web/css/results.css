@@ -1,0 +1,442 @@
+/* ==========================================================================
+   결과 패널 · 빈 상태, 결과 상자, 태그 칩, 편집칸·자동완성, 인물 그리드, 툴팁, 중복요청 모달
+   ========================================================================== */
+
+/* ── 빈 상태 ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-md);
+  min-height: 320px;
+  padding: var(--inset-xl);
+  text-align: center;
+  color: var(--color-fg-muted);
+  background: var(--panel-bg);
+  border: var(--border-width-thin) dashed var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+.empty-state svg {
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--gap-xs);
+  opacity: 0.5;
+}
+.empty-state p {
+  font: var(--prose-font);
+}
+.empty-state .queue-msg {
+  font: var(--font-heading);
+  color: var(--color-accent);
+}
+
+/* ── 결과 상자 ── */
+.results-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+}
+.result-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+  padding: var(--panel-padding);
+  background: var(--panel-bg);
+  border: var(--border-width-thin) solid var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+.result-box h3 {
+  font: var(--panel-title-font);
+  letter-spacing: var(--letter-spacing-overline);
+  text-transform: uppercase;
+  color: var(--panel-title-fg);
+}
+.copy-btn {
+  position: absolute;
+  top: var(--inset-md);
+  right: var(--inset-md);
+  padding: var(--button-sm-padding-y) var(--button-sm-padding-x);
+  font: var(--button-sm-font);
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--copy-button-radius);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+.copy-btn:hover {
+  color: var(--color-fg);
+  border-color: var(--color-accent);
+}
+.copy-btn.is-copied {
+  color: var(--color-on-accent);
+  background: var(--color-accent-solid);
+  border-color: var(--color-accent-solid);
+}
+.empty-note {
+  font: var(--font-subtitle);
+  color: var(--color-fg-muted);
+}
+
+/* ── 태그 칩 ── */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: var(--tag-gap);
+}
+.final-tags {
+  min-height: 54px;
+}
+.tag {
+  flex: 0 0 auto;
+  max-width: 100%;           /* 긴 단어형+ 구가 상자 밖으로 넘치지 않고 줄바꿈되게 */
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tag-padding-y) var(--tag-padding-x);
+  font: var(--tag-font);
+  color: var(--color-fg);
+  background: var(--chip-bg);
+  border: var(--border-width-thin) solid var(--chip-border);
+  border-radius: var(--tag-radius);
+  cursor: default;
+}
+/* 헤더 범례: 배지 크기 */
+.legend .tag {
+  padding: var(--badge-padding-y) var(--badge-padding-x);
+  font: var(--badge-font);
+  border-radius: var(--badge-radius);
+}
+
+/* 직접조회 후보: 점선 + 투명 배경 (종류 색이 있으면 아래 규칙이 글자·테두리 색을 덮는다) */
+.tag.candidate {
+  color: var(--color-fg-muted);
+  background: transparent;
+  border-style: dashed;
+}
+
+/* 종류별 색: --tag-color 하나로 배경·테두리·글자를 만든다 */
+.tag.tag-cat-0 { --tag-color: var(--tag-general); }
+.tag.tag-cat-1 { --tag-color: var(--tag-artist); }
+.tag.tag-cat-3 { --tag-color: var(--tag-copyright); }
+.tag.tag-cat-4 { --tag-color: var(--tag-character); }
+.tag.tag-cat-5 { --tag-color: var(--tag-meta); }
+.tag.fixed-badge { --tag-color: var(--tag-fixed); }
+.tag.passthrough-badge { --tag-color: var(--tag-passthrough); }
+.tag[class*="tag-cat-"],
+.tag.fixed-badge,
+.tag.passthrough-badge {
+  color: var(--tag-color);
+  background: color-mix(in srgb, var(--tag-color) var(--tag-tint-bg), transparent);
+  border-color: color-mix(in srgb, var(--tag-color) var(--tag-tint-border), transparent);
+}
+
+/* 클릭 = 삭제 */
+.tag.deletable {
+  cursor: pointer;
+  transition: color var(--transition-slow), background var(--transition-slow), border-color var(--transition-slow);
+}
+.tag.deletable:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+  text-decoration: line-through;
+}
+/* 클릭 = 복사 / Danbooru 열기 */
+.tag.copyable {
+  cursor: pointer;
+  transition: color var(--transition-slow), background var(--transition-slow), border-color var(--transition-slow);
+}
+.tag.copyable:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+}
+.tag.copyable.is-copied {
+  justify-content: center;
+  color: var(--color-on-accent);
+  background: var(--color-accent-solid);
+  border-color: var(--color-accent-solid);
+}
+/* 가중치가 1.0이 아닌 DB 태그 강조(휠로 조절됨) */
+.tag.db-tag.weighted {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 var(--tag-weighted-ring) var(--color-accent);
+  font-weight: var(--tag-weighted-weight);
+}
+/* 단어형+·퀄리티 뱃지: 종류 색 없음, 가중치 강조만 */
+.tag.nl-phrase-badge.weighted {
+  border-color: var(--color-fg-muted);
+  box-shadow: inset 0 0 0 var(--tag-weighted-ring) var(--color-fg-muted);
+  font-weight: var(--tag-weighted-weight);
+}
+.tag.fixed-badge,
+.tag.passthrough-badge {
+  cursor: default;
+}
+
+/* ── Danbooru 태그 편집칸 + 자동완성 ── */
+.final-edit {
+  width: 100%;
+  min-height: 0;
+  padding: var(--code-block-padding-y) var(--code-block-padding-x);
+  font: var(--code-block-font);
+  color: var(--color-fg);
+  background: var(--code-block-bg);
+  border: var(--border-width-thin) solid var(--code-block-border);
+  border-radius: var(--code-block-radius);
+  resize: vertical;
+  scrollbar-width: auto;
+  transition: border-color var(--transition-base);
+}
+.final-edit:focus {
+  outline: none;
+  border-color: var(--input-border-focus);
+}
+.ac-wrap {
+  position: relative;
+}
+.ac-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--layer-dropdown);
+  max-height: 320px;          /* textarea 가 크므로 더 많은 후보 노출 */
+  margin-top: var(--popover-offset);
+  padding: var(--inset-xs);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: var(--popover-bg);
+  border: var(--border-width-thin) solid var(--popover-border);
+  border-radius: var(--popover-radius);
+  box-shadow: var(--popover-shadow);
+}
+.ac-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2xs);
+  padding: var(--popover-item-padding-y) var(--popover-item-padding-x);
+  border-radius: var(--ac-item-radius);
+  cursor: pointer;
+}
+.ac-item:hover,
+.ac-item.active {
+  background: var(--popover-item-bg-active);
+}
+.ac-row1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-md);
+}
+.ac-item .ac-tag {
+  overflow: hidden;
+  font: var(--ac-tag-font);
+  color: var(--color-fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ac-item .ac-count {
+  flex-shrink: 0;
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.ac-row2 {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+.ac-row2:empty {
+  display: none;
+}
+.ac-badge {
+  flex-shrink: 0;
+  padding: 0 var(--badge-padding-x);
+  font: var(--badge-font);
+  white-space: nowrap;
+  border-radius: var(--badge-radius);
+}
+.ac-badge-cat {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  border: var(--border-width-thin) solid var(--color-accent-border);
+}
+.ac-alias {
+  overflow: hidden;
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ac-item mark {
+  color: var(--color-fg);
+  background: var(--ac-mark-bg);
+  border-radius: var(--ac-mark-radius);
+}
+
+/* ── 자연어 프롬프트 ── */
+.final-prompt {
+  min-height: var(--nl-prompt-min-height);
+  padding: var(--inset-md);
+  font: var(--prose-font);
+  color: var(--color-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-bg-sunken);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--input-radius);
+}
+
+/* ── 키워드 ── */
+.keyword-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+}
+.keyword-label {
+  font: var(--font-label);
+  color: var(--color-fg-muted);
+}
+
+/* ── 인물 그리드 (분할 모드) ── */
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--gap-lg);
+}
+.char-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  padding: var(--card-padding);
+  background: var(--card-bg);
+  border: var(--border-width-thin) solid var(--card-border);
+  border-radius: var(--card-radius);
+}
+.char-card.char-card-bg {
+  border-color: var(--color-accent);
+  border-style: dashed;
+}
+.char-card .cc-head {
+  font: var(--card-title-font);
+  color: var(--color-fg);
+}
+.char-card .cc-placeholder,
+.char-card .cc-empty {
+  color: var(--color-fg-muted);
+}
+.char-card .cc-empty {
+  font: var(--font-label);
+}
+.char-card .cc-series {
+  color: var(--color-accent);
+  font-weight: normal;
+}
+.char-card .cc-miss,
+.char-card .cc-pass {
+  display: inline-block;
+  padding: 0 var(--mini-tag-padding-x);
+  font: var(--badge-font);
+  vertical-align: middle;
+  border: var(--border-width-thin) solid;
+  border-radius: var(--mini-tag-radius);
+}
+.char-card .cc-miss {
+  color: var(--color-warning);
+  border-color: var(--color-warning-border);
+}
+.char-card .cc-pass {
+  color: var(--tag-passthrough);
+  border-color: color-mix(in srgb, var(--tag-passthrough) var(--tag-tint-border), transparent);
+}
+.char-card .cc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+}
+.char-card .cc-tag {
+  padding: var(--mini-tag-padding-y) var(--mini-tag-padding-x);
+  font: var(--mini-tag-font);
+  color: var(--color-fg-muted);
+  background: var(--color-bg-surface);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--mini-tag-radius);
+}
+
+/* ── 글로벌 툴팁 (JS가 위치를 정한다) ── */
+.custom-tooltip {
+  display: none;
+  position: fixed;
+  z-index: var(--layer-tooltip);
+  width: max-content;
+  max-width: 300px;
+  padding: var(--tooltip-padding-y) var(--tooltip-padding-x);
+  font: var(--tooltip-font);
+  color: var(--tooltip-fg);
+  white-space: pre-wrap;
+  word-break: keep-all;
+  background: var(--tooltip-bg);
+  border: var(--border-width-thin) solid var(--tooltip-border);
+  border-radius: var(--tooltip-radius);
+  box-shadow: var(--tooltip-shadow);
+  pointer-events: none;
+}
+
+/* ── 동일 IP 중복요청 거절 모달 ── */
+.dup-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--inset-xl);
+  background: var(--dialog-backdrop);
+}
+.dup-modal-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-md);
+  width: 100%;
+  max-width: var(--dialog-width);
+  padding: var(--inset-xl);
+  text-align: center;
+  background: var(--dialog-bg);
+  border: var(--border-width-thin) solid var(--dialog-border);
+  border-radius: var(--dialog-radius);
+  box-shadow: var(--dialog-shadow);
+}
+.dup-modal-icon {
+  font: var(--dialog-icon-font);
+}
+.dup-modal-title {
+  font: var(--dialog-title-font);
+  color: var(--color-fg);
+}
+.dup-modal-msg {
+  font: var(--font-body);
+  color: var(--color-fg);
+}
+.dup-modal-sub {
+  margin-bottom: var(--gap-md);
+  font: var(--font-body-sm);
+  color: var(--color-fg-muted);
+}
+.dup-modal-btn {
+  padding: var(--button-padding-y) var(--inset-xl);
+  font: var(--button-font);
+  color: var(--button-primary-fg);
+  background: var(--button-primary-bg);
+  border: none;
+  border-radius: var(--button-radius);
+  cursor: pointer;
+}
+.dup-modal-btn:hover {
+  background: var(--button-primary-bg-hover);
+}

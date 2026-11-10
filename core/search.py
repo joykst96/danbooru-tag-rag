@@ -1,11 +1,11 @@
 """
 검색 모듈 (순수 벡터검색 빌딩블록)
 
-LLM 없이 벡터 검색만 담당한다. variant(a/b/c)를 파라미터로 받아
-어느 인덱스든 동일 인터페이스로 검색할 수 있다.
+LLM 없이 벡터 검색·어휘 일치·실존 태그 확인만 담당한다. variant(인덱스 이름, 현재 sim)를
+파라미터로 받는다.
 
 설계 의도:
-    - LLM 오케스트레이션(2-pass 흐름)은 pipeline.py 가 담당.
+    - LLM 오케스트레이션은 pipeline_structured.py(기본 모드)·pipeline_split.py(고급 모드)가 담당.
     - 이 모듈은 단독으로 import 하여 데이터 탐색/벤치마크에 바로 쓸 수 있다.
     - DB 인스턴스는 variant별로 캐싱하여 재연결 비용을 줄인다.
 """
@@ -14,8 +14,8 @@ import logging
 import re
 from dataclasses import dataclass
 
-from .config import DEFAULT_TOP_K, DEFAULT_THRESHOLD, CATEGORY_LABELS
-from .database import TagDatabase, SearchResult
+from .config import DEFAULT_TOP_K, CATEGORY_LABELS
+from .database import TagDatabase, SearchResult, distance_to_similarity
 from .embeddings import EmbeddingManager
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def get_definitions(variant: str) -> dict[str, dict]:
 
     단어형+ 가 최종 태그의 의미 범위(definition/aliases/대·소분류)를 알아야
     "이미 태그가 커버한 부분"을 단어형에서 제외(또는 보강)할 수 있다.
-    e5 임베딩/벡터검색을 타지 않는 순수 테이블 덤프이며, get_tagset 과 동일하게
+    임베딩/벡터검색을 타지 않는 순수 테이블 덤프이며, get_tagset 과 동일하게
     첫 호출 1회만 LanceDB 를 읽고 이후엔 메모리 dict 조회다(단일워커+큐로 직렬화).
 
     반환: {tag: {"definition": str, "aliases": list[str], "major": str, "minor": str}}
@@ -181,32 +181,6 @@ def search_many(
 # ---------------------------------------------------------------------------
 # 2분할 검색 (일반 / 캐릭터+작품) + 캐릭터 미스 폴백
 # ---------------------------------------------------------------------------
-def search_general(
-    keywords: list[str],
-    variant: str,
-    top_k: int = DEFAULT_TOP_K,
-) -> list[KeywordHits]:
-    """일반(cat 0) DB만 검색. 속성/인원수/행동/배경 단위용."""
-    return search_many(keywords, variant, top_k=top_k, include_categories=GENERAL_CATS)
-
-
-def search_pool(
-    keywords: list[str],
-    variant: str,
-    top_k: int = DEFAULT_TOP_K,
-    categories: set[int] | None = None,
-) -> list[KeywordHits]:
-    """
-    지정 카테고리 풀에서 검색. 기본 파이프라인의 '검색 풀 설정'(고급 옵션)용.
-
-    categories=None 이면 일반(cat 0)만 검색해 기존 동작과 동일.
-    사용자가 작가/작품/캐릭터/메타를 풀에 추가하면 그 카테고리까지 검색하지만,
-    일반 외 카테고리는 속성검색을 오염시켜 출력 품질이 떨어질 수 있다(경고 대상).
-    """
-    cats = categories if categories else GENERAL_CATS
-    return search_many(keywords, variant, top_k=top_k, include_categories=cats)
-
-
 def search_copyright(
     keywords: list[str],
     variant: str,
@@ -230,92 +204,6 @@ def search_character_only(
     (사용자 결정: 없는 캐릭터는 태그 검색 자체를 버리고 NL 이름 보존.)
     """
     return search_many(keywords, variant, top_k=top_k, include_categories=CHAR_ONLY_CATS)
-
-
-def search_character(
-    keywords: list[str],
-    variant: str,
-    top_k: int = DEFAULT_TOP_K,
-    fallback_threshold: float = DEFAULT_THRESHOLD,
-    fallback_variant: str | None = None,
-) -> list[KeywordHits]:
-    """
-    캐릭터+작품(cat 3,4) DB 검색. 단위가 캐릭터명일 때 사용.
-
-    폴백: 캐릭터 DB top score 가 fallback_threshold 미만이면
-    (= DB에 그 캐릭터가 없음) 같은 키워드를 일반 DB로 재질의해서
-    속성으로 표현되게 한다. 마이너 캐릭터가 통째로 날아가는 것 방지.
-
-    Note:
-        폴백 트리거(fallback_threshold) 값은 측정으로 보정해야 한다.
-        cross-lingual score 가 0.8x 압축이라 절대값 컷이 위험할 수 있음.
-    """
-    fallback_variant = fallback_variant or variant
-    char_hits = search_many(
-        keywords, variant, top_k=top_k, include_categories=CHARACTER_CATS
-    )
-
-    miss_keywords = [
-        h.keyword for h in char_hits
-        if h.top is None or h.top.score < fallback_threshold
-    ]
-    if not miss_keywords:
-        return char_hits
-
-    # 미스난 키워드만 일반 DB로 폴백 재질의
-    logger.info(f"캐릭터 미스 → 일반 폴백: {miss_keywords}")
-    fb_hits = {
-        h.keyword: h
-        for h in search_general(miss_keywords, fallback_variant, top_k=top_k)
-    }
-
-    # 폴백 결과로 교체 (히트한 캐릭터는 유지)
-    merged: list[KeywordHits] = []
-    for h in char_hits:
-        if h.keyword in fb_hits and (h.top is None or h.top.score < fallback_threshold):
-            merged.append(fb_hits[h.keyword])
-        else:
-            merged.append(h)
-    return merged
-
-
-def collect_tags(
-    hits: list[KeywordHits],
-    threshold: float = DEFAULT_THRESHOLD,
-) -> tuple[list[SearchResult], list[SearchResult]]:
-    """
-    여러 KeywordHits에서 태그를 모아 (확정, 후보)로 분리.
-
-    - score >= threshold          → 확정(confirmed)
-    - threshold-0.08 <= score < threshold → 후보(candidate)
-    중복 태그는 가장 높은 score 기준으로 1개만 유지.
-    """
-    best: dict[str, SearchResult] = {}
-    for h in hits:
-        for r in h.results:
-            prev = best.get(r.tag)
-            if prev is None or r.score > prev.score:
-                best[r.tag] = r
-
-    confirmed, candidate = [], []
-    for r in best.values():
-        if r.score >= threshold:
-            confirmed.append(r)
-        elif r.score >= threshold - 0.08:
-            candidate.append(r)
-
-    confirmed.sort(key=lambda x: x.score, reverse=True)
-    candidate.sort(key=lambda x: x.score, reverse=True)
-    return confirmed, candidate
-
-
-def group_by_category(results: list[SearchResult]) -> dict[str, list[SearchResult]]:
-    """검색 결과를 카테고리 라벨별로 그룹핑 (general/copyright/character)."""
-    grouped: dict[str, list[SearchResult]] = {}
-    for r in results:
-        label = CATEGORY_LABELS.get(r.category, "unknown")
-        grouped.setdefault(label, []).append(r)
-    return grouped
 
 
 # ---------------------------------------------------------------------------
@@ -345,3 +233,130 @@ _COSPLAY_RE = re.compile(r"\(cosplay\)\s*$", re.IGNORECASE)
 def drop_character_derived(tags: list[str]) -> list[str]:
     """결과에서 _(cosplay) 등 캐릭터 파생 태그를 제거(이중 방어)."""
     return [t for t in tags if not _COSPLAY_RE.search(t)]
+
+
+# ---------------------------------------------------------------------------
+# structured 파이프라인 전용 검색 (기존 함수와 별개 — 기존 경로 동작 불변)
+# ---------------------------------------------------------------------------
+# 1) 카테고리를 LanceDB where 사전 필터로 거른다.
+#    기존 TagDatabase.search 는 top_k*4 를 가져와 파이썬에서 거르는 사후 필터라, 상위권을 다른
+#    카테고리가 채우면 결과가 비는 경우가 있다(벤치 실측: "여기사" → 로마자 한국 작가명(cat1)이 top20
+#    을 채워 cat0 결과 0건).
+# 2) 어휘 일치: 영어 조각을 태그 표기로 바꿔 같은 이름의 태그가 DB 에 있으면 후보로 쓴다.
+#    (벤치 실측: nt 인덱스에서 "glasses" 질의 top5 에 glasses 가 없었다.)
+
+# variant별 '태그 → (카테고리, 정의, 별칭)' 캐시 (어휘 일치용). 벡터 컬럼은 읽지 않는다.
+_tagrow_cache: dict[str, dict[str, dict]] = {}
+
+
+def get_tag_rows(variant: str) -> dict[str, dict]:
+    """{tag: {"tag","category","definition","aliases"}} (1회 로드 후 캐시)."""
+    if variant not in _tagrow_cache:
+        tbl = get_db(variant).table
+        cols = ["tag", "category", "definition", "aliases"]
+        try:
+            d = tbl.to_lance().to_table(columns=cols).to_pydict()
+        except Exception:  # pylance 없는 환경 폴백
+            df = tbl.to_pandas()
+            d = {c: df[c].tolist() for c in cols}
+        _tagrow_cache[variant] = {
+            t: {"tag": t, "category": int(c), "definition": dfn or "",
+                "aliases": list(al) if al is not None else []}
+            for t, c, dfn, al in zip(d["tag"], d["category"], d["definition"], d["aliases"])
+        }
+        logger.info(f"태그 행 맵 로드 (variant={variant}): {len(_tagrow_cache[variant])}개")
+    return _tagrow_cache[variant]
+
+
+def lexical_lookup(en: str, variant: str, categories: set[int]) -> list[dict]:
+    """영어 조각과 이름이 같은 태그(소문자·공백→_·단수/복수·관사 제거 변형). 없으면 []."""
+    rows = get_tag_rows(variant)
+    base = en.strip().lower().replace(" ", "_")
+    forms = [base, base.rstrip("s") if base.endswith("s") else base + "s"]
+    for art in ("a_", "an_", "the_"):
+        if base.startswith(art):
+            forms.append(base[len(art):])
+    out = []
+    for f in dict.fromkeys(forms):
+        r = rows.get(f)
+        if r and r["category"] in categories:
+            out.append({**r, "score": None})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 고급 모드 캐릭터·작품 칸 전용: 이름 정확 일치 (2026-11-08 운영 로그 표본 e10)
+# ---------------------------------------------------------------------------
+# 벡터 검색만으로는 짧은 이름이 비슷한 표기의 다른 태그에 밀린다:
+#   "라플라스" top8 에 laplace_(nikke) 가 없음(별칭 "라플라스"는 있음), "아리" → ari_(shichigatsu) 등,
+#   ahri_(league) 는 별칭이 "구미호"뿐이라 영어 이름 "ahri" 의 태그 본체(괄호 앞)로만 찾을 수 있다.
+# 그래서 이름(한국어·영어)을 정규화해 ① 별칭 ② 태그 본체(괄호 한정어를 뗀 이름)와 정확히 같은 태그를 후보에 더한다.
+_name_index_cache: dict[tuple[str, int], dict[str, list[tuple[int, str]]]] = {}
+_QUAL_RE = re.compile(r"(_\([^)]*\))+$")
+
+
+def norm_name(s: str) -> str:
+    """이름 비교용 정규화: 소문자, 글자·숫자만(공백·밑줄·구두점 제거)."""
+    return re.sub(r"[\W_]+", "", (s or "").lower())
+
+
+def tag_base(tag: str) -> str:
+    """태그 본체: 끝의 괄호 한정어를 뗀 이름. laplace_(nikke) → laplace, saber_alter_(ver._shinjuku_1999) → saber_alter."""
+    return _QUAL_RE.sub("", tag)
+
+
+def _name_index(variant: str, category: int) -> dict[str, list[tuple[int, str]]]:
+    """{정규화 이름: [(빈도, 태그)]} — 별칭과 태그 본체·태그 전체 이름으로 만든다(1회 로드 후 캐시)."""
+    key = (variant, category)
+    if key not in _name_index_cache:
+        d = get_db(variant).table.to_lance().to_table(columns=["tag", "category", "frequency", "aliases"]).to_pydict()
+        idx: dict[str, list[tuple[int, str]]] = {}
+        for t, c, f, al in zip(d["tag"], d["category"], d["frequency"], d["aliases"]):
+            if int(c) != category:
+                continue
+            names = {norm_name(t), norm_name(tag_base(t))} | {norm_name(a) for a in (al or [])}
+            for n in names:
+                if n:
+                    idx.setdefault(n, []).append((int(f or 0), t))
+        _name_index_cache[key] = idx
+        logger.info(f"이름 색인 로드 (variant={variant}, cat={category}): {len(idx)}개")
+    return _name_index_cache[key]
+
+
+def exact_name_lookup(names: list[str], variant: str, category: int, limit: int = 8) -> list[dict]:
+    """이름들과 별칭·태그 본체가 정확히 같은 태그(빈도순, 최대 limit). 결과 형식은 search_prefiltered_multi 와 같고 score=None."""
+    idx = _name_index(variant, category)
+    rows = get_tag_rows(variant)
+    keys = {norm_name(nm) for nm in names} - {""}
+    found: dict[str, tuple[int, int]] = {}
+    for k in keys:
+        for f, t in idx.get(k, []):
+            # 정렬: 태그 이름 자체가 같은 것(sakura_miko) → 빈도순(의상 변형 sakura_miko_(casual) 등은 뒤로)
+            found[t] = (0 if norm_name(t) in keys else 1, -f)
+    out = []
+    for t in sorted(found, key=lambda x: found[x])[:limit]:
+        r = rows.get(t)
+        if r:
+            out.append({**r, "score": None})
+    return out
+
+
+def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:
+    """
+    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (structured 속도판).
+    search_prefiltered 와 결과 형식이 같다. categories[i] 는 texts[i] 의 카테고리 집합.
+    """
+    if not texts:
+        return []
+    vecs = EmbeddingManager.embed_queries(texts)
+    tbl = get_db(variant).table
+    out: list[list[dict]] = []
+    for v, cats in zip(vecs, categories):
+        where = f"category IN ({', '.join(str(c) for c in sorted(cats))})"
+        rows = tbl.search(v).where(where, prefilter=True).limit(top_k).to_list()
+        out.append([{
+            "tag": r["tag"], "category": r["category"], "definition": r.get("definition") or "",
+            "aliases": list(r.get("aliases") or []),
+            "score": round(distance_to_similarity(r["_distance"]), 4),
+        } for r in rows])
+    return out
