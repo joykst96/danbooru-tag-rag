@@ -83,7 +83,7 @@ and a local LLM (llama.cpp). Tags that are not in the database never reach the o
 
 1. 의존성 설치: `uv sync` 또는 `pip install -e .`
 2. `.env` 작성 (LLM 엔드포인트, `EMBEDDING_DEVICE`) — `.env.example` 참고
-3. 태그 CSV 생성: `python -m core.tags_source` → 루트 `danbooru-tags.csv` (HF `mengod-hf/danbooru-tags-kr` 2026-11-04, post_count ≥ 50, 116,325개)
+3. 태그 CSV 생성: `python -m core.tags_source` → 루트 `danbooru-tags.csv` (HF `mengod-hf/danbooru-tags-kr` 2026-11-10판, post_count ≥ 50, 118,133개)
 4. 임베딩 모델 다운로드(최초 1회): `python download_model.py` → `models/embeddinggemma-2`
 5. 인덱스 빌드: `python -m core.builder` → `data/embeddinggemma-2/lancedb_sim` (GPU 권장, CPU는 매우 느림).
 
@@ -175,7 +175,7 @@ Embedding is `google/embeddinggemma-2` (text encoder only, 768-d) with index `si
 uv sync                      # or pip install -e .
 # .env (see .env.example)
 python download_model.py     # once → models/embeddinggemma-2
-python -m core.tags_source   # → danbooru-tags.csv (mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50)
+python -m core.tags_source   # → danbooru-tags.csv (mengod-hf/danbooru-tags-kr 2026-11-10 edition, post_count >= 50)
 python -m core.builder       # GPU recommended → data/embeddinggemma-2/lancedb_sim
 python -m core.api           # port 3333
 ```

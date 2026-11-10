@@ -22,7 +22,7 @@ danbooru-tags-rag/
 
 ```bash
 python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
-python -m core.tags_source                        # danbooru-tags.csv (HF mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50, 116,325개)
+python -m core.tags_source                        # danbooru-tags.csv (HF mengod-hf/danbooru-tags-kr 2026-11-10판, post_count >= 50, 118,133개)
 EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_sim (GPU 권장)
 ```
 
@@ -32,6 +32,12 @@ EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lanced
   겹치는 107,414개는 임베딩 텍스트·벡터가 이전 인덱스와 같습니다(카테고리만 152개 바뀜).
   **배포할 때 `danbooru-tags.csv`와 `data/embeddinggemma-2/lancedb_sim`을 함께 바꿔야 합니다.** CSV 는 UI 태그 설명·자동완성이 쓰고,
   인덱스와 같은 소스여야 설명이 맞습니다.
+- **2026-11-10 소스 판 교체**: 같은 데이터셋의 11-04판을 11-10판(rev `aa899ee`)으로 바꿨습니다(116,325 → 118,133개, 신규 1,808개는 대부분 작가).
+  11-10판은 별칭 표기가 `<키워드> 별칭1, 별칭2.`로 바뀌었고, 일부 분류 라벨이 별칭에 섞였습니다. `core/tags_source.py`가 11-04판과 대조해
+  라벨을 빼고 기존 `키워드:` 형식으로 써 주므로 parser·builder는 그대로입니다. 11-04판을 넣으면(`--edition 2026-11-04`) 출력이 이전과
+  바이트 단위로 같습니다. 11-10판에서는 기존 태그 1,302행의 설명이 바뀝니다(대부분 공식 한글명 정정). 근거는 `core/tags_source.py` 독스트링에 있습니다.
+  이전 CSV는 `danbooru-tags.old-20261110.csv`로 남겼습니다. 배포할 때 CSV와 인덱스를 함께 바꿔야 하는 것은 같습니다.
+  재빌드한 인덱스(118,133행)에서 문서 텍스트가 바뀌지 않은 공통 115,026개는 이전 인덱스와 벡터가 같습니다(cos 0.9999998 이상, 배치 구성에 따른 1e-6 미만 차이).
 
 - `core.tags_source`는 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다.
 - 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.

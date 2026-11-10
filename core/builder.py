@@ -5,7 +5,7 @@ danbooru-tags.csv 를 읽어 sim 인덱스(data/embeddinggemma-2/lancedb_sim)를
 
 흐름:
     1. CSV 로드 → parser 로 ParsedTag 리스트 생성 (EXCLUDED_CATEGORIES·MIN_FREQUENCY 필터)
-       CSV 는 python -m core.tags_source 로 만든다(HF mengod-hf/danbooru-tags-kr 2026-11-04, post_count >= 50).
+       CSV 는 python -m core.tags_source 로 만든다(HF mengod-hf/danbooru-tags-kr 2026-11-10판, post_count >= 50).
     2. "{태그명} {정의} {별칭}" 텍스트를 embeddinggemma-2 로 임베딩 (토큰 예산 배치, GPU 권장)
        쿼리·문서 모두 SentenceSimilarity 프롬프트(embeddings.py). 벤치 이름 ns.
     3. DanbooruTag 레코드로 묶어 LanceDB 저장

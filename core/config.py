@@ -96,10 +96,10 @@ MIN_FREQUENCY = 50
 # LanceDB 설정
 # ---------------------------------------------------------------------------
 # 인덱스는 sim 하나.
-#   sim = danbooru-tags.csv(mengod-hf/danbooru-tags-kr 2026-11-04 에서 core/tags_source.py 로 생성)의 태그를
+#   sim = danbooru-tags.csv(mengod-hf/danbooru-tags-kr 2026-11-10판에서 core/tags_source.py 로 생성)의 태그를
 #         "{태그명} {정의} {별칭}" 으로, 쿼리·문서 모두 SentenceSimilarity 프롬프트를 붙여 임베딩.
 #         (벤치 이름 ns. 이전 커밋의 nt(title 형식)는 단일 질의·영어 질의에서 유의하게 나빠 교체했다.)
-#   태그 116,325개(post_count >= 50). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
+#   태그 118,133개(post_count >= 50, 11-04판은 116,325개). 경로는 모델별 폴더(data/embeddinggemma-2/lancedb_sim).
 MAIN_VARIANT = "sim"
 
 
