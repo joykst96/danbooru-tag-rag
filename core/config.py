@@ -61,7 +61,7 @@ def get_embedding_model_path() -> str:
 
 
 # 디바이스: 'cuda' / 'cpu' / None(자동). 환경변수 EMBEDDING_DEVICE로 제어.
-# 테스트 환경(eGPU RTX 4060)에서는 'cuda' 권장 — CPU 대비 임베딩 빌드가 수십 배 빠름.
+# 인덱스 빌드는 'cuda' 권장 — CPU 대비 수십 배 빠름.
 EMBEDDING_DEVICE = os.environ.get("EMBEDDING_DEVICE", None)
 
 # 임베딩 배치 크기

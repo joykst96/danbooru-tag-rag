@@ -22,28 +22,15 @@ danbooru-tags-rag/
 
 ```bash
 python download_model.py                          # models/embeddinggemma-2 (접근 제한 없음, 약 1.5GB)
-python -m core.tags_source                        # danbooru-tags.csv (HF mengod-hf/danbooru-tags-kr 2026-11-10판, post_count >= 50, 118,133개)
+python -m core.tags_source                        # danbooru-tags.csv (HF mengod-hf/danbooru-tags-kr, post_count >= 50)
 EMBEDDING_DEVICE=cuda python -m core.builder      # data/embeddinggemma-2/lancedb_sim (GPU 권장)
 ```
 
-- **2026-11-08 태그 데이터 교체**: 태그 집합을 출처 기록이 없던 옛 `danbooru-tags.csv`(114,092개)에서 위 소스(116,325개)로 바꿨습니다.
-  새 캐릭터 약 4만 개가 들어오고, Danbooru 에서 이름이 바뀐 태그는 새 이름으로 나갑니다(`china_dress` → `qipao`).
-  이미지 시험(anima-base-v1.0 / SilvermoonMix 2B, 이름 바뀐 20쌍)에서 새 이름 인식 18/20, 옛 이름 16~17/20 이었습니다.
-  겹치는 107,414개는 임베딩 텍스트·벡터가 이전 인덱스와 같습니다(카테고리만 152개 바뀜).
-  **배포할 때 `danbooru-tags.csv`와 `data/embeddinggemma-2/lancedb_sim`을 함께 바꿔야 합니다.** CSV 는 UI 태그 설명·자동완성이 쓰고,
-  인덱스와 같은 소스여야 설명이 맞습니다.
-- **2026-11-10 소스 판 교체**: 같은 데이터셋의 11-04판을 11-10판(rev `aa899ee`)으로 바꿨습니다(116,325 → 118,133개, 신규 1,808개는 대부분 작가).
-  11-10판은 별칭 표기가 `<키워드> 별칭1, 별칭2.`로 바뀌었고, 일부 분류 라벨이 별칭에 섞였습니다. `core/tags_source.py`가 11-04판과 대조해
-  라벨을 빼고 기존 `키워드:` 형식으로 써 주므로 parser·builder는 그대로입니다. 11-04판을 넣으면(`--edition 2026-11-04`) 출력이 이전과
-  바이트 단위로 같습니다. 11-10판에서는 기존 태그 1,302행의 설명이 바뀝니다(대부분 공식 한글명 정정). 근거는 `core/tags_source.py` 독스트링에 있습니다.
-  이전 CSV는 `danbooru-tags.old-20261110.csv`로 남겼습니다. 배포할 때 CSV와 인덱스를 함께 바꿔야 하는 것은 같습니다.
-  재빌드한 인덱스(118,133행)에서 문서 텍스트가 바뀌지 않은 공통 115,026개는 이전 인덱스와 벡터가 같습니다(cos 0.9999998 이상, 배치 구성에 따른 1e-6 미만 차이).
-
-- `core.tags_source`는 소스 CSV(HF `mengod-hf/danbooru-tags-kr`, revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다.
+- **`danbooru-tags.csv`와 `data/embeddinggemma-2/lancedb_sim`은 항상 함께 바꿔 배포합니다.** CSV는 UI의 태그 설명·자동완성이 쓰므로, 인덱스와 같은 소스여야 설명이 맞습니다. 교체 전 파일은 백업해 두면 되돌리기 쉽습니다.
+- `core.tags_source`는 소스 CSV(revision 고정)를 HF 캐시로 받습니다. 그래서 빌드 머신에는 인터넷이 필요합니다.
 - 인덱스 빌드는 VRAM을 약 6GB 씁니다(토큰 예산 배치). CPU 빌드는 매우 느립니다.
 - 임베딩 벡터는 디바이스와 무관하게 같으므로, CUDA로 빌드한 인덱스를 CPU 서빙에 그대로 씁니다.
-- 검증 기록(tag-embedding 벤치): 이 빌더가 만든 sim 인덱스는 벤치 인덱스(ns)와 114,092행 모두 레코드가 같고 벡터 차이가 0입니다.
-  2026-11-08 리팩터(a/b/c 변형 제거) 전후로 임베딩 대상 텍스트·레코드 메타 해시가 같아 **재빌드는 필요 없습니다.**
+- 태그 데이터를 새 판으로 갱신하는 절차는 [MAINTENANCE.md](MAINTENANCE.md) "태그 데이터 갱신"에 있습니다.
 
 ## .env
 
@@ -56,9 +43,9 @@ EMBEDDING_DEVICE=cpu          # GPU 서빙 시 cuda
 # LLM_CACHE_PROMPT=on         # 분해·선택 호출의 프롬프트 캐시 (off = 재현성 우선, 느림)
 ```
 
-파이프라인은 llama.cpp의 `response_format: json_schema`(문법 제한 디코딩)를 쓰고, 문자열에 `pattern`(대괄호·큰따옴표 금지)을 겁니다. 확인한 서버 빌드는 llama.cpp b12004와 b12192입니다. `pattern`을 지원하지 않는 서버에서는 코드가 깨진 조각을 버리는 것으로만 방어합니다.
-구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. thinking을 켜면 선택 단계에서 사고 과정이 슬롯 컨텍스트 8192를 다 써서 실패했습니다(벤치 실측 40%).
-구조화 호출은 프롬프트 캐시를 켭니다(`LLM_CACHE_PROMPT`, 기본 on). 이 서버는 MoE 일부를 CPU에 둬서 프롬프트 처리가 초당 약 150~200토큰으로 느리기 때문에, 캐시를 켜면 호출당 3~5초가 빨라집니다.
+파이프라인은 `response_format: json_schema`(문법 제한 디코딩)를 쓰고, 문자열에 `pattern`(대괄호·큰따옴표 금지)을 겁니다. `pattern`을 지원하지 않는 서버에서는 코드가 깨진 조각을 버리는 것으로만 방어합니다.
+구조화 호출(분해·선택)은 `LLM_THINKING`과 관계없이 thinking을 끕니다. 켜면 사고 과정이 컨텍스트를 다 써서 실패할 수 있습니다.
+구조화 호출은 프롬프트 캐시를 켭니다(`LLM_CACHE_PROMPT`, 기본 on). 시스템 프롬프트를 다시 처리하지 않아 빨라지며, 프롬프트 처리가 느린 서버(예: MoE 일부를 CPU에 둔 경우)일수록 효과가 큽니다.
 캐시를 켜면 같은 입력의 결과가 실행마다 조금 다를 수 있습니다. 재현성이 필요하면 `LLM_CACHE_PROMPT=off`로 바꾸면 되고, 대신 느려집니다.
 응답이 비거나 출력 한도까지 반복되면, 자동으로 캐시를 끄고 한 번 재시도합니다(로그: `구조화 호출 실패 → 캐시 끄고 재시도`).
 
@@ -130,7 +117,7 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","emb
 - 위치: `logs/generations-YYYY-MM-DD.jsonl` (일자별 분리 — 무한 증식 방지).
   - compose 의 `./logs:/app/logs` 볼륨으로 **호스트에 보존**(컨테이너 재시작/재빌드해도 유지).
   - 경로는 `GEN_LOG_PATH` 환경변수로 변경 가능(기본 `/app/logs/generations.jsonl`).
-- 형식 v2 (2026-11-11부터). v1 키는 이름·의미가 그대로라 기존 분석 스크립트와 아래 `jq` 명령이 그대로 동작합니다.
+- 형식 v2. v1 키는 이름·의미가 그대로라 기존 분석 스크립트와 아래 `jq` 명령이 그대로 동작합니다.
 
   | 키 | 내용 |
   |---|---|
@@ -177,9 +164,7 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","emb
 - uvicorn 단일 프로세스(워커 1)입니다. 늘리면 인메모리 로그/큐가 프로세스별로 갈립니다.
 - reload 를 켜지 마십시오(좀비 프로세스 + 멀티프로세스 로그 분산).
 - CORS allow_origins 가 현재 "\*" 입니다. 같은 오리진 서빙이라 무방하나, 외부 노출 시 도메인으로 좁힙니다.
-- 작가(cat1)·메타(cat5)는 인덱싱하도록 바뀌었으나(EXCLUDED_CATEGORIES 비움), **인덱스 재빌드를 해야
-  실제로 검색됩니다.** 재빌드 전에는 태그 검색 범위/직접조회에서 작가·메타를 선택해도 0건입니다.
-  GPU 머신에서 빌드해 서버로 복사합니다(CPU 빌드는 매우 느립니다).
+- 인덱스는 모든 카테고리(작가·메타 포함)를 담습니다(`EXCLUDED_CATEGORIES` 비어 있음). 태그 검색 범위·직접조회에서 작가·메타가 0건이면 인덱스가 이 설정 이전에 빌드된 것이니 다시 빌드합니다.
 
 ## 스트리밍 / 대기열 (nginx 설정 중요)
 

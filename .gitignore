@@ -24,3 +24,8 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# 로컬 전용 메모·도구 설정 (환경 고유 정보, 공개 안 함)
+*.local.md
+CLAUDE.md
+.claude/

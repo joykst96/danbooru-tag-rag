@@ -10,7 +10,7 @@ services:
       - "3333:3333"
     volumes:
       # 빌드 산출물·모델·CSV·설정은 호스트에서 마운트 (이미지에 안 구움)
-      - ./data:/app/data:ro            # LanceDB 인덱스 (5070에서 빌드해 복사)
+      - ./data:/app/data:ro            # LanceDB 인덱스 (GPU 머신에서 빌드해 복사)
       - ./models:/app/models:ro        # embeddinggemma-2 (download_model.py)
       - ./danbooru-tags.csv:/app/danbooru-tags.csv:ro
       - ./.env:/app/.env:ro
