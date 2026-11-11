@@ -219,7 +219,7 @@ async def _call(system: str, user: str, temperature: float, timeout: float = 120
 
 async def _call_json(
     system: str, user: str, schema: dict, name: str,
-    temperature: float = 0.0, seed: int = 1234, timeout: float = 180.0,
+    temperature: float = 0.0, seed: int = 1234, timeout: float = 180.0, max_tokens: int = 512,
 ) -> dict:
     """
     JSON 스키마 강제 호출 (structured 파이프라인 전용, 기존 _call 과 별개).
@@ -241,24 +241,35 @@ async def _call_json(
       500("does not match the expected peg-gemma4 format")을 매번 냈다. 온도 0 이면 seed·캐시와 관계없이 같은 경로다.
       seed 10개 성공률(로컬 b12192): 온도 0.3 7/10, 0.5 8/10, 0.7 7/10(+전각 괄호 섞인 붕괴 2). 그래서 0.5 로 3회.
       실패한 호출에만 타는 경로라 정상 호출의 출력은 바뀌지 않는다.
+    - 다시 보내도 결과가 같은 실패는 재시도를 줄인다(2026-11-12, 운영 로그 점검):
+        요청 자체가 거절된 경우(HTTP 4xx, 예: 프롬프트가 슬롯 컨텍스트를 넘김)는 재시도하지 않는다.
+        출력 한도에 걸린 경우(finish=length)는 캐시 끄고 1회만 다시 보낸다(위의 혼잣말 반복은 이것으로 풀린다).
+      전에는 이런 실패도 5번을 다 보내서, 태그 63개를 나열한 입력 하나가 약 74초 동안 대기열을 잡았다.
+    - max_tokens: 호출하는 쪽이 입력 길이에 맞춰 올릴 수 있다(분해: pipeline_structured.decompose).
     """
     try:
-        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, LLM_CACHE_PROMPT)
+        return await _call_json_once(system, user, schema, name, temperature, seed, timeout, LLM_CACHE_PROMPT, max_tokens)
     except LLMError as e:
+        retry = getattr(e, "retry", "full")
+        if retry == "none":
+            raise
         if LLM_CACHE_PROMPT:
             logger.warning(f"구조화 호출 실패 → 캐시 끄고 재시도 ({name}): {e}")
             try:
-                return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False)
+                return await _call_json_once(system, user, schema, name, temperature, seed, timeout, False, max_tokens)
             except LLMError as e2:
                 e = e2
-        if temperature > 0:
+                retry = getattr(e, "retry", "full")
+        if temperature > 0 or retry != "full":
             raise e
         for k in range(1, RETRY_SEEDS + 1):
             logger.warning(f"구조화 호출 실패 → 온도 {RETRY_TEMPERATURE}, seed {seed + k} 로 재시도 ({name}): {e}")
             try:
-                return await _call_json_once(system, user, schema, name, RETRY_TEMPERATURE, seed + k, timeout, False)
+                return await _call_json_once(system, user, schema, name, RETRY_TEMPERATURE, seed + k, timeout, False, max_tokens)
             except LLMError as e3:
                 e = e3
+                if getattr(e, "retry", "full") != "full":
+                    break
         raise e
 
 
@@ -266,7 +277,14 @@ RETRY_TEMPERATURE = 0.5  # _call_json 의 마지막 재시도 온도·횟수 (�
 RETRY_SEEDS = 3
 
 
-async def _call_json_once(system, user, schema, name, temperature, seed, timeout, cache_prompt) -> dict:
+def _llm_error(msg: str, retry: str) -> LLMError:
+    """retry: "full"(기존 재시도 전부) / "cache"(캐시 끄고 1회만) / "none"(재시도 안 함) — _call_json 이 읽는다."""
+    err = LLMError(msg)
+    err.retry = retry
+    return err
+
+
+async def _call_json_once(system, user, schema, name, temperature, seed, timeout, cache_prompt, max_tokens=512) -> dict:
     payload = {
         "model": LLM_MODEL,
         "messages": [
@@ -275,7 +293,7 @@ async def _call_json_once(system, user, schema, name, temperature, seed, timeout
         ],
         "temperature": temperature,
         "top_p": 1.0,
-        "max_tokens": 512,
+        "max_tokens": max_tokens,
         "thinking_budget_tokens": 0,
         "chat_template_kwargs": {"enable_thinking": False},
         "cache_prompt": cache_prompt,
@@ -288,12 +306,14 @@ async def _call_json_once(system, user, schema, name, temperature, seed, timeout
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            raise LLMError(f"LLM 호출 실패: {_http_error_text(e)}")
+            rejected = isinstance(e, httpx.HTTPStatusError) and 400 <= e.response.status_code < 500
+            raise _llm_error(f"LLM 호출 실패: {_http_error_text(e)}", "none" if rejected else "full")
     choice = data["choices"][0]
     content = (choice["message"].get("content") or "").strip()
     finish = choice.get("finish_reason")
     if not content or finish == "length":
-        raise LLMError(f"LLM 응답 본문 없음 또는 출력 한도 (finish={finish}, usage={data.get('usage')})")
+        raise _llm_error(f"LLM 응답 본문 없음 또는 출력 한도 (finish={finish}, usage={data.get('usage')})",
+                         "cache" if finish == "length" else "full")
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:

@@ -41,6 +41,7 @@ LLM_MODEL=your-model-name
 LLM_THINKING=off
 EMBEDDING_DEVICE=cpu          # GPU 서빙 시 cuda
 # LLM_CACHE_PROMPT=on         # 분해·선택 호출의 프롬프트 캐시 (off = 재현성 우선, 느림)
+# SEARCH_BACKEND=matrix       # 후보 검색 방식. matrix = 태그 벡터를 메모리에 올려 검색(기본, 메모리 약 360MB 추가), lancedb = 예전 방식(느림)
 ```
 
 파이프라인은 `response_format: json_schema`(문법 제한 디코딩)를 쓰고, 문자열에 `pattern`(대괄호·큰따옴표 금지)을 겁니다. `pattern`을 지원하지 않는 서버에서는 코드가 깨진 조각을 버리는 것으로만 방어합니다.

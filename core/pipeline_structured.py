@@ -42,6 +42,15 @@ logger = logging.getLogger(__name__)
 TOP_K = 5                 # 질의(한국어·영어)마다 top5 → 조각당 후보 최대 10 + 어휘 일치
 DEF_CHARS = 90            # 선택 프롬프트에 보여 줄 정의 길이
 ALIAS_COUNT = 4           # 선택 프롬프트에 보여 줄 별칭 수
+# 긴 입력 (2026-11-12 운영 로그 점검)
+#   분해: 출력 한도 512 로는 태그 63개를 나열한 입력(803자)이 finish=length 로 매번 실패했다(오류 19건 전부).
+#         입력이 길면 한도를 올린다. 2048 이면 같은 입력이 670토큰·조각 62개로 끝난다. 짧은 입력은 512 그대로다.
+#   선택: 조각이 30개쯤 넘으면 프롬프트가 슬롯 컨텍스트(8192)를 넘어 400 이 나고 모든 조각이 분해 영어로 대체됐다
+#         (기본 모드 성공 요청의 7%). 한 번에 부른 호출이 실패하면 SELECT_CHUNK 개씩 나눠 다시 부른다.
+#         처음부터 나눠 부르지 않는 이유: 나눈 호출은 한 번에 부른 결과와 조각의 80~88%만 같았다(벤치 e14).
+DECOMPOSE_LONG_CHARS = 300
+DECOMPOSE_LONG_MAX_TOKENS = 2048
+SELECT_CHUNK = 12
 
 
 def count_tags(dec: dict) -> list[str]:
@@ -161,15 +170,27 @@ def merge_modifier_units(units: list[dict]) -> list[dict]:
 # 써도 빠졌다. 분해가 이런 말을 '시각 의미 없는 말'로 버려 조각이 안 남는다. 옛 파이프라인(운영)은 붙였다.)
 # 인원 0 이고 캐릭터가 없을 때만 본다. 둘 중 하나면 붙인다.
 #   1) 입력에 사람이 없다는 말이 있다.
-#   2) 최종 토큰이 전부 DB 태그(구가 없음)이고 2개 이상이며, 사람을 전제하는 대분류(신체·표정·의상·자세 ...)의
-#      태그가 하나도 없다 — 풍경·사물만 있는 장면(Danbooru 관례상 no_humans). 구가 섞이면 판단하지 않는다
-#      ("배구 서브하는 자세"처럼 구로만 남은 사람 동작을 놓치지 않으려고 보수적으로 잡음).
+#   2) 최종 토큰이 전부 DB 태그(구가 없음)이고 서로 다른 태그가 2개 이상이며, 사람을 전제하는 대분류(신체·표정·의상·자세 ...)의
+#      태그가 하나도 없고, 장면 대분류(배경·장소·자연 ...)의 태그가 하나 이상 있다 — 풍경·사물만 있는 장면
+#      (Danbooru 관례상 no_humans). 구가 섞이면 판단하지 않는다("배구 서브하는 자세"처럼 구로만 남은 사람 동작을
+#      놓치지 않으려고 보수적으로 잡음).
+#      2026-11-12: 장면 태그가 있어야 한다는 조건과 사람 대분류 12개를 더했다. 대분류가 1,051종이라 사람 대분류
+#      목록만으로는 못 막아서 "nude, full_body, from_behind"(성적·구성), "portrait, upper_body"(구도·구성),
+#      "close-up, close-up"(같은 태그 둘)에도 no_humans 가 붙었다. 운영 로그에서 붙은 고유 입력 3건 중 2건이
+#      이 오판정이었다(증명사진 얼굴, 초근접 접사). 평가 표본(e10)의 풍경 장면 6건은 그대로 붙는다.
 _NO_PEOPLE_RE = re.compile(
     r"(사람|인물|인간)\S{0,2}\s*(아무도\s*)?없|아무도\s*없|\bno\s+(humans?|people|persons?|one|characters?)\b|\bnobody\b",
     re.IGNORECASE)
 _PERSON_MAJORS = {"신체", "신체 특징", "표정", "패션", "의상", "복장", "의류", "자세", "포즈", "동작", "행동", "행위",
                   "인물", "외형", "머리", "머리카락", "장신구", "액세서리", "코스프레", "캐릭터", "종족", "성인", "H",
-                  "성적 표현", "성행위"}
+                  "성적 표현", "성행위",
+                  "구성", "얼굴", "성적", "성", "상태", "표현", "신체 표현", "신체 장식", "의상 상태", "관계", "직업", "장식"}
+_SCENE_MAJORS = {"배경", "장소", "자연", "풍경", "지리", "건축", "건물", "식물"}
+
+
+def _majors(meta: dict) -> set[str]:
+    """대분류 문자열 → 낱개 집합 ("배경/사물" 같은 겹친 표기를 나눈다)."""
+    return {m.strip() for m in (meta.get("major") or "").split("/") if m.strip()}
 
 
 def needs_no_humans(text: str, tokens: list[str], variant: str) -> bool:
@@ -177,9 +198,11 @@ def needs_no_humans(text: str, tokens: list[str], variant: str) -> bool:
     if _NO_PEOPLE_RE.search(text or ""):
         return True
     defs = search_mod.get_definitions(variant)
+    tokens = list(dict.fromkeys(tokens))
     if len(tokens) < 2 or any(t not in defs for t in tokens):
         return False
-    return not any(defs[t].get("major") in _PERSON_MAJORS for t in tokens)
+    majors = [_majors(defs[t]) for t in tokens]
+    return not any(m & _PERSON_MAJORS for m in majors) and any(m & _SCENE_MAJORS for m in majors)
 
 
 # NovelAI 가중치 문법 정리 (2026-11-08 운영 로그 표본 e10 n=12: "2::장난스러운::", "-1.5:검은 머리::", "[[노란빛 머리]]").
@@ -219,11 +242,8 @@ def all_candidates(units: list[dict], cats_list: list[set[int]], variant: str) -
     return out
 
 
-async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]], name: str) -> tuple[list[list[str]], list[str]]:
-    """
-    조각별 선택. 반환: (조각별 선택 목록, 메모). 선택은 태그 또는 "phrase:<영어 구>".
-    LLM 호출이 실패해도 조각을 버리지 않고 분해 때 받은 영어로 대체한다(메모에 남김).
-    """
+async def _select_call(korean_prompt: str, units: list[dict], cands: list[list[dict]], name: str) -> dict:
+    """선택 LLM 호출 1회. 반환: {"u0": [번호...] 또는 "구", ...} (조각 번호는 넘겨받은 목록 기준)."""
     lines = [f"Original Korean sentence: {korean_prompt}", ""]
     props = {}
     for i, (u, cs) in enumerate(zip(units, cands)):
@@ -240,14 +260,37 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
         phrase = {"type": "string", "pattern": PHRASE_PATTERN}
         props[f"u{i}"] = {"anyOf": [nums, phrase]} if cs else phrase
     schema = {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
+    return await _call_json(SYSTEM_SELECT, "\n".join(lines), schema, name, seed=LLM_SEED)
 
+
+async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]], name: str) -> tuple[list[list[str]], list[str]]:
+    """
+    조각별 선택. 반환: (조각별 선택 목록, 메모). 선택은 태그 또는 "phrase:<영어 구>".
+    LLM 호출이 실패해도 조각을 버리지 않고 분해 때 받은 영어로 대체한다(메모에 남김).
+    조각이 많아 한 번에 부른 호출이 실패하면 SELECT_CHUNK 개씩 나눠 다시 부른다(위 상수 설명).
+    """
     notes: list[str] = []
     try:
-        res = await _call_json(SYSTEM_SELECT, "\n".join(lines), schema, name, seed=LLM_SEED)
+        res = await _select_call(korean_prompt, units, cands, name)
     except LLMError as e:
-        logger.warning(f"선택 실패 → 분해 영어로 대체: {e}")
-        notes.append(f"선택 실패: {e}")
         res = {}
+        if len(units) > SELECT_CHUNK:
+            logger.warning(f"선택 실패 → {SELECT_CHUNK}개씩 나눠 다시 부름 (조각 {len(units)}개): {e}")
+            notes.append(f"선택 나눠 부름({len(units)}개): {e}")
+            for start in range(0, len(units), SELECT_CHUNK):
+                try:
+                    part = await _select_call(korean_prompt, units[start:start + SELECT_CHUNK],
+                                              cands[start:start + SELECT_CHUNK], name)
+                except LLMError as e2:
+                    logger.warning(f"선택 실패(나눈 호출 {start}~) → 분해 영어로 대체: {e2}")
+                    notes.append(f"선택 실패: {e2}")
+                    continue
+                for k, v in part.items():
+                    if k.startswith("u") and k[1:].isdigit():
+                        res[f"u{start + int(k[1:])}"] = v
+        else:
+            logger.warning(f"선택 실패 → 분해 영어로 대체: {e}")
+            notes.append(f"선택 실패: {e}")
 
     picks: list[list[str]] = []
     for i, (u, cs) in enumerate(zip(units, cands)):
@@ -260,6 +303,16 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
         elif isinstance(r, str) and _INSTRUCTION_LEAK.search(r):
             notes.append(f"{u['ko']}: 지시문 문구 {r!r} → 분해 영어 '{u['en']}'")
             r = None
+        elif isinstance(r, str) and r.strip():
+            # 태그 이름을 문자열로 쓴 경우 (아래 _tag_key 설명)
+            key = _tag_key(r)
+            names = [h["tag"] for h in cs]
+            if key in names:
+                notes.append(f"{u['ko']}: 태그 이름 문자열 {r!r} → 후보 번호로 해석")
+                r = [names.index(key)]
+            elif "_" in r:
+                notes.append(f"{u['ko']}: 후보에 없는 태그 표기 {r!r} → 분해 영어 '{u['en']}'")
+                r = None
         if isinstance(r, list):
             tags = list(dict.fromkeys(cs[j]["tag"] for j in r if isinstance(j, int) and 0 <= j < len(cs)))
             picks.append(tags or ["phrase:" + u["en"]])
@@ -276,19 +329,61 @@ async def select(korean_prompt: str, units: list[dict], cands: list[list[dict]],
 #   구로 처리돼 최종 태그에 "4, 1, 0"이 찍혔다(n=73, n=17). 구 패턴에 영문자를 필수로 넣는 방법도 있지만
 #   문법이 바뀌면 모델 출력 전체가 달라질 수 있어(번호 대신 엉뚱한 글자를 이어 쓰게 됨) 코드에서 해석한다.
 # - 지시문 문구: 프롬프트의 "when NO candidate matches"가 구로 새어 나왔다(n=63 "no candidate matches").
+# - 태그 이름 문자열 (2026-11-12 운영 로그 점검, 고유 요청 207건·조각 1,108개): 구 110개 중 46개는 그 조각의
+#   후보 태그 이름을 번호 대신 글자로 쓴 것이었고("u3":"on_floor"), 8개는 DB 에 없는 밑줄 표기였다
+#   ("censored_breasts", "college_student"). 앞의 것은 그 후보로 해석하고(화면 표시는 같지만
+#   로그·구 빼기 옵션·no_humans 판정에서 태그로 다뤄진다), 뒤의 것은 태그처럼 보이는 가짜라 분해 영어로 바꾼다
+#   — "후보 밖 태그는 내보내지 않는다"는 원칙을 문자열 경로에도 적용한다. 밑줄이 없는 보통 구는 그대로 둔다.
 _NUM_STR = re.compile(r"^\s*\d+(\s*[,/ ]\s*\d+)*\s*$")
+
+
+def _tag_key(s: str) -> str:
+    """구 문자열 → 태그 표기(소문자, 공백을 밑줄로)."""
+    return "_".join(s.strip().lower().split())
 _INSTRUCTION_LEAK = re.compile(r"\bcandidates?\b|\bno\s+match|^\s*(none|n/?a|null|nothing)\s*$", re.IGNORECASE)
 
 
 async def decompose(text: str) -> dict:
-    """구조화 분해 1회 (JSON 스키마 강제)."""
+    """구조화 분해 1회 (JSON 스키마 강제). 입력이 길면 출력 한도를 올린다(DECOMPOSE_LONG_* 설명)."""
+    if len(text) > DECOMPOSE_LONG_CHARS:
+        return await _call_json(SYSTEM_DECOMPOSE, text, SCHEMA_DECOMPOSE, "decompose", seed=LLM_SEED,
+                                max_tokens=DECOMPOSE_LONG_MAX_TOKENS)
     return await _call_json(SYSTEM_DECOMPOSE, text, SCHEMA_DECOMPOSE, "decompose", seed=LLM_SEED)
 
 
+# 내용 없는 구 (2026-11-12 운영 로그 점검). 분해가 위치·연결 낱말을 따로 떼면("바이크 앞에" → [바이크][앞에])
+# 그 조각은 맞는 태그가 없어 "in front of", "inside", "wearing", "covered", "expression" 같은 구로 최종 태그에
+# 남았다(조각 1,108개 중 29개). 그 낱말만으로는 그릴 것이 없으므로 최종 태그에서 뺀다.
+#   - 구로 남았을 때만 뺀다. 같은 부류라도 태그가 붙은 조각(from_behind, straight-on, looking_at_viewer)은 정상이다.
+#   - 시점·방향 낱말(from, behind, above, below, side, back, view, shot, angle)은 넣지 않았다
+#     ("from below" 처럼 구로 남아도 뜻이 있다).
+#   - 분해 영어(en_units)는 그대로라, 담백 톤 자연어의 입력에는 남는다.
+# 분해 프롬프트로 막는 길은 조각을 통째로 잃는 회귀가 있어 버렸다(벤치 gen_test/e14_audit).
+# 이 어휘는 코드 후처리용이다. 프롬프트에는 넣지 않는다.
+_EMPTY_WORDS = set("""
+a an the in on at of to by with into onto inside within near beside between around across along through front
+is are be being been was were has have having
+wearing worn put placed located visible shown showing seen looking look
+open opened closed covered covering fixed lit entering
+thing something object part area place spot shape form
+expression facial face appearance pose posture gesture motion movement action state situation scene
+outfit clothes clothing attire background setting atmosphere mood feeling
+random various some any one two both each every all only just very really
+secretly gently slowly quickly slightly intense naturally
+""".split())
+
+
+def _empty_phrase(text: str) -> bool:
+    """구가 위 낱말로만 이뤄졌는지."""
+    w = [x for x in re.split(r"[\s_\-]+", text.lower().strip()) if x]
+    return bool(w) and all(x in _EMPTY_WORDS for x in w)
+
+
 def assemble(picks: list[list[str]], all_cands: list[list[dict]], n_chars: int,
-             variant: str) -> tuple[list[str], list[str], list[str]]:
+             variant: str, empty_out: list[str] | None = None) -> tuple[list[str], list[str], list[str]]:
     """
     선택 결과 → (캐릭터 태그, 본문 토큰, DB 밖이라 지운 태그). 앞의 n_chars 개 조각이 캐릭터 조각.
+    내용 없는 구(_EMPTY_WORDS)는 본문에 넣지 않고, empty_out 을 주면 거기에 적는다(로그용).
     캐릭터 조각은 cat4 태그만 남긴다(작품 cat3 은 최종에서 제외, 기존 정책).
     본문은 태그와 영어 구(쉼표 제거)가 섞이며, DB 실존 확인과 _(cosplay) 등 파생 태그 제거를 거친다.
     """
@@ -298,7 +393,10 @@ def assemble(picks: list[list[str]], all_cands: list[list[dict]], n_chars: int,
         for p in ps:
             if p.startswith("phrase:"):
                 t = _phrase_text(p)
-                if t:
+                if t and i >= n_chars and _empty_phrase(t):
+                    if empty_out is not None and t not in empty_out:
+                        empty_out.append(t)
+                elif t:
                     body.append(t)
             elif i < n_chars:
                 if tag_cat.get(p) == 4 and p not in char_tags:
@@ -445,7 +543,8 @@ async def stream_structured_pipeline(
         logger.info(f"structured 선택 메모: {notes}")
 
     # ── 4. 최종 조립 + 이중 방어 ──
-    char_tags, body, dropped_db = assemble(picks, all_cands, len(chars), variant)
+    empty_phrases: list[str] = []
+    char_tags, body, dropped_db = assemble(picks, all_cands, len(chars), variant, empty_phrases)
     if not count and not chars and "no_humans" not in body and needs_no_humans(korean_prompt, body, variant):
         count = ["no_humans"]
     final = list(dict.fromkeys(count + char_tags + body))
@@ -467,6 +566,8 @@ async def stream_structured_pipeline(
     }
     if phrases_dropped:
         trace["phrases_dropped"] = phrases_dropped
+    if empty_phrases:
+        trace["empty_phrases"] = empty_phrases
     yield {"stage": "final", "status": "태그 완성",
            "data": {"final_tags": final_out, "hallucinated": list(dropped_db), "trace": trace}}
 
