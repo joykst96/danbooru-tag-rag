@@ -3,6 +3,7 @@ import { state, $, escapeHtml } from "./state.js";
 import { streamNdjson } from "./api.js";
 import { collectCharacters, getSearchPoolCategories } from "./input-form.js";
 import { displayResults } from "./results.js";
+import { acEnsureLoaded } from "./tag-data.js";
 
 export function showDuplicateModal(msg) {
   const m = $("dup_modal");
@@ -97,6 +98,8 @@ export async function generateTags() {
     resetButton();
     return;
   }
+  // 결과 뱃지 호버 설명용 태그 데이터. 생성(수 초)과 함께 받기 시작하고, 기다리지 않는다.
+  acEnsureLoaded();
 
   try {
     await streamNdjson(req.url, req.payload, (chunk) => {

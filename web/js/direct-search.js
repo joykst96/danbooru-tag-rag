@@ -1,7 +1,7 @@
 // 벡터DB 단일태그 직접조회: LLM 없이 입력 단어로 /api/direct_search 를 부르고 결과 뱃지를 그린다.
 import { state, $, setActiveIn } from "./state.js";
 import { readFormatOptions, formatTagText } from "./tag-format.js";
-import { tagInfo } from "./tag-data.js";
+import { tagInfo, acEnsureLoaded } from "./tag-data.js";
 import { directSearch } from "./api.js";
 import { doCopy } from "./clipboard.js";
 
@@ -37,6 +37,8 @@ export async function searchDirectDB() {
   btn.disabled = true;
   spinner.hidden = false;
   btnText.textContent = "조회 중...";
+  // 결과 뱃지 호버 설명용 태그 데이터. 기다리지 않고, 준비되면 main.js 가 결과를 다시 그린다.
+  acEnsureLoaded();
 
   const categories = Array.from(
     document.querySelectorAll(".cat-toggle[data-cat].active")

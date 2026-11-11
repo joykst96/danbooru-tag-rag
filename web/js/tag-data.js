@@ -13,10 +13,16 @@ const AC_STORE = "index";
 export const tagInfo = new Map();
 export const ac = { ready: false, loading: false, tags: null, bigram: null };
 
-// 워커로 새로 빌드했을 때 호출(이미 떠 있는 결과의 뱃지 색 갱신용). main.js 가 정한다.
+// 데이터가 준비됐을 때 호출(캐시·워커 빌드 둘 다). 이미 떠 있는 결과 뱃지의
+// 설명 툴팁·카테고리 색을 다시 채우는 용도. main.js 가 정한다.
 let onBuilt = null;
 export function setOnTagDataBuilt(fn) {
   onBuilt = fn;
+}
+function notifyBuilt() {
+  if (onBuilt) {
+    try { onBuilt(); } catch (e) {}
+  }
 }
 
 // ── IndexedDB: 빌드 결과 저장/로드 (재방문 시 파싱 스킵) ──
@@ -72,6 +78,7 @@ export async function acEnsureLoaded() {
       if (cached.infoKeys) fillTagInfo(cached.infoKeys, cached.infoVals);
       ac.ready = true; ac.loading = false;
       console.log("태그 자동완성 준비됨 (캐시 " + ac.tags.length + "개)");
+      notifyBuilt();
       return;
     }
     // 2) Worker 로 CSV 파싱 + 인덱스 빌드
@@ -98,10 +105,7 @@ export async function acEnsureLoaded() {
       bigramKeys: result.bigramKeys, bigramVals: result.bigramVals,
       infoKeys: result.infoKeys, infoVals: result.infoVals,
     }).catch(() => {});
-    // 결과가 이미 화면에 있으면 뱃지 카테고리 색 갱신
-    if (onBuilt) {
-      try { onBuilt(); } catch (e) {}
-    }
+    notifyBuilt();
   } catch (e) {
     console.warn("태그 자동완성 로드 실패:", e);
   } finally {

@@ -14,7 +14,7 @@ import {
   displayResults, setWeightSyntax, updatePromptDisplay, onFinalEditInput, onFinalEditBlur,
   copyToClipboard, copyAll,
 } from "./results.js";
-import { toggleCat, setDirectClickMode, searchDirectDB } from "./direct-search.js";
+import { toggleCat, setDirectClickMode, searchDirectDB, renderDirectDBResults } from "./direct-search.js";
 import { generateTags, closeDuplicateModal } from "./generate.js";
 
 const on = (el, type, fn) => el.addEventListener(type, fn);
@@ -59,11 +59,15 @@ const finalEdit = $("final_prompt_edit");
 on(finalEdit, "input", onFinalEditInput);
 on(finalEdit, "blur", onFinalEditBlur);
 makeAutocomplete(finalEdit, $("ac_dropdown"), { onChoose: onFinalEditInput });
-// 첫 포커스 시 자동완성 데이터 로드(페이지 로드를 막지 않음)
+// 태그 데이터(CSV 약 20MB) 로드 시점: 편집칸 첫 포커스, 생성 요청, 직접조회 요청(generate.js·direct-search.js).
+// 결과 뱃지 호버 설명(tagInfo)도 이 데이터를 쓴다. 예전엔 편집칸 포커스에서만 로드해서,
+// 편집칸을 안 건드리면 뱃지가 전부 "설명을 찾을 수 없습니다"였다.
+// 페이지 로드 때 받지 않는 건 생성하지 않는 방문자까지 20MB를 받지 않게 하려는 것.
 finalEdit.addEventListener("focus", acEnsureLoaded, { once: true });
-// 데이터를 새로 빌드했고 결과가 이미 화면에 있으면 뱃지 카테고리 색 갱신
+// 데이터가 결과보다 늦게 준비되면 이미 뜬 뱃지의 설명·카테고리 색을 다시 채운다.
 setOnTagDataBuilt(() => {
   if (state.result && state.result.final_prompt) displayResults();
+  if (state.directResults) renderDirectDBResults();
 });
 
 each(".copy-btn[data-copy]", (b) => on(b, "click", () => copyToClipboard(b.dataset.copy)));
