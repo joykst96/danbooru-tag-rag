@@ -25,7 +25,9 @@
   --gray-89: #d7dbe3;
   --gray-82: #bfc5d1;
   --gray-66: #8b91a0;
+  --gray-62: #7e869a; /* 라이트 컨트롤 테두리: 페이지·패널·움푹한 영역 위 3:1 이상 */
   --gray-59: #767e92;
+  --gray-52: #61697c; /* 다크 컨트롤 테두리: 페이지·패널·움푹한 영역 위 3:1 이상 */
   --gray-47: #545b69;
   --gray-38: #3a4154;
   --gray-30: #2a2e38;
@@ -38,20 +40,24 @@
   /* ---------- 파랑(blue) · 강조 ---------- */
   --blue-95: #e7edfc;
   --blue-72: #7aa2f7;
-  --blue-52: #2a5fce;
+  --blue-52: #2a5fce; /* 라이트 채움·라벨 */
+  --blue-46: #1a4dbb; /* 라이트 글자: 옅은 배경(subtle·subtle-hover) 위에서도 4.5:1 */
   --blue-25: #1a2030;
 
   /* ---------- 초록(green) · 성공 ---------- */
   --green-80: #9ece6a;
-  --green-48: #1b7030;
+  --green-48: #1b7030; /* 라이트 채움·라벨 */
+  --green-44: #066424; /* 라이트 글자 */
 
   /* ---------- 호박(amber) · 경고 ---------- */
   --amber-78: #e0af68;
-  --amber-52: #8a5f10; /* 원 팔레트의 #9a6a12는 #f7f8fa 위 4.45:1, 경고 배지(옅은 배경) 위에선 더 낮아 미달 → 어둡게 */
+  --amber-52: #8a5f10; /* 라이트 채움. 원 팔레트의 #9a6a12는 #f7f8fa 위 4.45:1로 미달이라 어둡게 한 값 */
+  --amber-46: #764f01; /* 라이트 글자 */
 
   /* ---------- 빨강(red) · 오류/파괴 ---------- */
   --red-72: #f7768e;
-  --red-53: #c0283c;
+  --red-53: #c0283c; /* 채움(두 테마)·라이트 라벨 */
+  --red-45: #a20128; /* 라이트 글자 */
 
   /* ---------- 보라(purple) · 라벨 ---------- */
   --purple-72: #bb8aef; /* oklch(72% 0.15 305), 다크 배경 위 텍스트 */
@@ -100,10 +106,11 @@
   --letter-spacing-normal: 0;
   --letter-spacing-caps: 0.06em;
 
-  /* 상태 변화량: hover/press 때 기준색을 전경색 쪽으로 섞는 비율 */
+  /* ---------- 상태 변화량 · hover/press 때 기준색을 전경색 쪽으로 섞는 비율 ---------- */
   --mix-hover: 10%;
   --mix-press: 18%;
 
+  /* ---------- 간격 단위 ---------- */
   --space-unit: 0.25rem; /* 4px @16px 루트 — 아래 간격 블록 참고 */
 
   /* (간격 배수는 아래 별도 블록: 밀도 전환 때 재계산돼야 해서 분리) */
@@ -241,6 +248,9 @@
   --color-border: light-dark(var(--gray-89), var(--gray-30));
   --color-border-strong: light-dark(var(--gray-82), var(--gray-38));
   --color-border-subtle: color-mix(in srgb, var(--color-border) var(--alpha-half), transparent);
+  /* 컨트롤 경계(입력창·칩·테두리 버튼): 그 선이 있어야 컨트롤인 줄 아는 곳. 인접 배경과 3:1 이상(WCAG 1.4.11).
+     패널·구분선 같은 장식선은 --color-border를 쓴다(대비 기준 없음). */
+  --color-border-control: light-dark(var(--gray-62), var(--gray-52));
 
   /* ---------------- 전경(텍스트·아이콘) ---------------- */
   --color-fg: light-dark(var(--gray-22), var(--gray-93));          /* 본문 */
@@ -250,18 +260,22 @@
 
   /* ---------------- 의도(intent) 색 ----------------
      모든 의도는 같은 모양을 가진다:
-       --color-{X}               텍스트·아이콘·테두리 (표면 위 4.5:1 이상)
-       --color-{X}-solid         채움 배경
+       --color-{X}               텍스트·아이콘·테두리. 페이지·패널·움푹한 영역 위, 그리고 그 위에 깐
+                                 자기 subtle·subtle-hover 배경 위 어디서나 4.5:1 이상
+       --color-{X}-solid         채움 배경. 글자색과 단계가 다를 수 있다: 채움은 on-색과 4.5:1이면 되고,
+                                 글자는 옅은 배경 위에서도 읽혀야 해서 라이트에서 더 어둡다
        --color-{X}-solid-hover
        --color-{X}-solid-press
        --color-on-{X}            solid 위에 올리는 텍스트
        --color-{X}-subtle        옅은 배경(배지·하이라이트)
        --color-{X}-subtle-hover
-       --color-{X}-border        옅은 테두리 */
+       --color-{X}-border        옅은 테두리
+     hover/press는 on-색에서 멀어지는 쪽으로 섞는다. 그래야 상태가 바뀌어도 글자 대비가 줄지 않는다.
+     on-색이 테마를 따라 뒤집히는 accent·success·warning은 전경색 쪽, on-색이 늘 흰색인 danger는 검정 쪽이다. */
 
   /* accent — 주 동작·링크·포커스 */
-  --color-accent: light-dark(var(--blue-52), var(--blue-72));
-  --color-accent-solid: var(--color-accent);
+  --color-accent: light-dark(var(--blue-46), var(--blue-72));
+  --color-accent-solid: light-dark(var(--blue-52), var(--blue-72));
   --color-accent-solid-hover: color-mix(in oklab, var(--color-accent-solid), var(--color-fg) var(--mix-hover));
   --color-accent-solid-press: color-mix(in oklab, var(--color-accent-solid), var(--color-fg) var(--mix-press));
   --color-on-accent: light-dark(var(--gray-100), var(--gray-16));
@@ -270,8 +284,8 @@
   --color-accent-border: color-mix(in srgb, var(--color-accent) var(--alpha-medium), transparent);
 
   /* success */
-  --color-success: light-dark(var(--green-48), var(--green-80));
-  --color-success-solid: var(--color-success);
+  --color-success: light-dark(var(--green-44), var(--green-80));
+  --color-success-solid: light-dark(var(--green-48), var(--green-80));
   --color-success-solid-hover: color-mix(in oklab, var(--color-success-solid), var(--color-fg) var(--mix-hover));
   --color-success-solid-press: color-mix(in oklab, var(--color-success-solid), var(--color-fg) var(--mix-press));
   --color-on-success: light-dark(var(--gray-100), var(--gray-16));
@@ -280,8 +294,8 @@
   --color-success-border: color-mix(in srgb, var(--color-success) var(--alpha-medium), transparent);
 
   /* warning — 특수 모드·주의 */
-  --color-warning: light-dark(var(--amber-52), var(--amber-78));
-  --color-warning-solid: var(--color-warning);
+  --color-warning: light-dark(var(--amber-46), var(--amber-78));
+  --color-warning-solid: light-dark(var(--amber-52), var(--amber-78));
   --color-warning-solid-hover: color-mix(in oklab, var(--color-warning-solid), var(--color-fg) var(--mix-hover));
   --color-warning-solid-press: color-mix(in oklab, var(--color-warning-solid), var(--color-fg) var(--mix-press));
   --color-on-warning: light-dark(var(--gray-100), var(--gray-16));
@@ -292,10 +306,10 @@
   /* danger — 오류 메시지 + 삭제 같은 파괴적 동작
      텍스트(밝은 분홍)와 채움(진한 빨강)이 다르다: 다크 배경 위 텍스트는 밝아야 읽히고,
      흰 글자를 올리는 채움은 어두워야 하기 때문. */
-  --color-danger: light-dark(var(--red-53), var(--red-72));
+  --color-danger: light-dark(var(--red-45), var(--red-72));
   --color-danger-solid: var(--red-53);
-  --color-danger-solid-hover: color-mix(in oklab, var(--color-danger-solid), var(--color-fg) var(--mix-hover));
-  --color-danger-solid-press: color-mix(in oklab, var(--color-danger-solid), var(--color-fg) var(--mix-press));
+  --color-danger-solid-hover: color-mix(in oklab, var(--color-danger-solid), var(--gray-0) var(--mix-hover));
+  --color-danger-solid-press: color-mix(in oklab, var(--color-danger-solid), var(--gray-0) var(--mix-press));
   --color-on-danger: var(--gray-100);
   --color-danger-subtle: color-mix(in srgb, var(--color-danger) var(--alpha-subtle), transparent);
   --color-danger-subtle-hover: color-mix(in srgb, var(--color-danger) var(--alpha-soft), transparent);
@@ -304,7 +318,8 @@
   /* ---------------- 라벨 (분류용) ----------------
      태그 종류·카테고리처럼 "어느 무리인가"만 구분하는 색이다. 성공·오류 같은 뜻이 없다.
      텍스트 색이다(표면·움푹한 영역·선택 배경 위 4.5:1 이상). 옅은 배경이 필요하면 의도 색처럼 color-mix로 만든다.
-     파랑·빨강·초록은 의도 색과 같은 원시값을 쓴다. 어느 라벨이 무엇을 뜻하는지는 앱 3층이 정한다. */
+     다섯 색의 명도를 비슷하게 맞춘 한 벌이다(라이트 48~53, 다크 72~80). 그래서 라이트의 파랑·빨강·초록은
+     의도 색 글자(더 어두움)가 아니라 채움과 같은 단계를 쓴다. 어느 라벨이 무엇을 뜻하는지는 앱 3층이 정한다. */
   --color-label-blue: light-dark(var(--blue-52), var(--blue-72));
   --color-label-red: light-dark(var(--red-53), var(--red-72));
   --color-label-purple: light-dark(var(--purple-50), var(--purple-72));
@@ -409,9 +424,17 @@
 
 :root,
 [data-density] {
+  /* ---------------- 컨트롤 공통 ----------------
+     한 줄짜리 컨트롤(버튼·입력창·셀렉트·아이콘 버튼)은 높이가 하나다. 나란히 놓아도 어긋나지 않는다.
+     높이 = 글자 한 줄(행간 1) + 위아래 여백 + 테두리 = 14 + 2×10 + 2 = 36 (촘촘 31 · 여유 41).
+     행간이 다른 컨트롤(입력창은 1.5)은 여백을 이 높이에서 거꾸로 계산한다. */
+  --control-padding-y: var(--space-2_5);
+  --control-height: calc(var(--font-size-base) + 2 * var(--control-padding-y) + 2 * var(--border-width-thin));
+  --control-border: var(--color-border-control);
+
   /* ---------------- 버튼 ---------------- */
   --button-font: var(--font-control);
-  --button-padding-y: var(--space-2_5);
+  --button-padding-y: var(--control-padding-y);
   --button-padding-x: var(--space-4);
   --button-gap: var(--gap-sm);
   --button-radius: var(--radius-lg);
@@ -430,7 +453,7 @@
   --button-ghost-bg-hover: var(--color-bg-muted);
   --button-ghost-bg-press: var(--color-bg-muted-press);
   --button-ghost-fg: var(--color-fg);
-  --button-ghost-border: var(--color-border-strong);
+  --button-ghost-border: var(--control-border);
 
   --button-danger-bg: var(--color-danger-solid);
   --button-danger-bg-hover: var(--color-danger-solid-hover);
@@ -450,24 +473,32 @@
   --icon-button-bg: var(--color-bg-sunken);
   --icon-button-fg: var(--color-fg-muted);
   --icon-button-fg-hover: var(--color-fg);
-  --icon-button-border: var(--color-border);
+  --icon-button-border: var(--control-border);
   --icon-button-border-hover: var(--color-accent);
   --icon-button-radius: var(--radius-md);
 
+  /* 테마 전환 버튼(.theme-toggle)의 해/달 아이콘. 버튼 모양은 .btn 변형을 그대로 쓴다.
+     아이콘은 글자 옆에 서므로 간격(밀도)이 아니라 글자 스케일을 따른다.
+     bleed: 아이콘이 글자(.btn-sm, 행간 1)보다 큰 만큼 위아래 여백으로 넘쳐 들어가게 해서
+     버튼 높이를 옆의 글자 .btn-sm과 같게 한다(16px 아이콘 → 30px가 아니라 26px). */
+  --theme-toggle-icon-size: var(--font-size-lg);
+  --theme-toggle-icon-bleed: calc((var(--theme-toggle-icon-size) - var(--font-size-sm)) / 2);
+
   /* ---------------- 입력창 (input/textarea/select) ---------------- */
   --input-font: var(--font-body);
-  --input-padding-y: var(--space-2);
+  /* 높이를 --control-height에 맞춘다: (높이 − 글자 줄 높이 − 테두리) ÷ 2 = (36 − 21 − 2) ÷ 2 = 6.5 */
+  --input-padding-y: calc((var(--control-height) - var(--font-size-base) * var(--line-height-normal) - 2 * var(--border-width-thin)) / 2);
   --input-padding-x: var(--space-2_5);
   --input-radius: var(--radius-md);
   --input-bg: var(--color-bg-sunken);
   --input-fg: var(--color-fg);
   --input-placeholder: var(--color-fg-subtle);
-  --input-border: var(--color-border);
+  --input-border: var(--control-border);
   --input-border-focus: var(--color-accent);
   --input-textarea-min-height: var(--space-16);
 
   /* 작은 입력: 라벨 줄 안에 들어가는 숫자 칸 등. 높이가 --field-label-height와 같다
-     (글자 sm × 행간 normal + 위아래 여백 + 테두리 = 12×1.5 + 2×2 + 2 = 24). */
+     (글자 sm × 행간 normal + 위아래 여백 + 테두리 = 12×1.5 + 2×2 + 2 = 24, 촘촘 23 · 여유 25). */
   --input-sm-font-size: var(--font-size-sm);
   --input-sm-padding-y: var(--space-0_5);
   --input-sm-padding-x: var(--space-1_5);
@@ -483,7 +514,9 @@
      그래서 라벨 글자와 그 아래 입력창 사이의 보이는 간격이 모든 필드에서 같다. */
   --label-font: var(--font-label);
   --label-fg: var(--color-fg-muted);
-  --field-label-height: var(--space-6);  /* 24 — 작은 입력·배지가 들어가도 늘지 않는 높이 */
+  /* 작은 입력(.input-sm)의 높이와 같은 식이다. 간격 배수(--space-6)로 두면 촘촘한 밀도에서 18로 줄어
+     작은 입력(23)·배지(19.5)가 줄을 밀어내고, 줄마다 높이가 달라진다. */
+  --field-label-height: calc(var(--font-size-sm) * var(--line-height-normal) + 2 * var(--input-sm-padding-y) + 2 * var(--border-width-thin)); /* 24 */
   --field-label-gap: var(--gap-md);      /* 라벨 줄 안 요소 사이 */
   --label-gap: var(--gap-xs);            /* 라벨 줄 ↔ 입력창 */
   --field-gap: var(--space-2_5);         /* 필드 ↔ 필드 (anima 실측 10) */
@@ -506,7 +539,7 @@
   --chip-radius: var(--radius-pill);
   --chip-bg: var(--color-bg-sunken);
   --chip-fg: var(--color-fg-muted);
-  --chip-border: var(--color-border);
+  --chip-border: var(--control-border);
   --chip-fg-hover: var(--color-fg);
   --chip-border-hover: var(--color-accent);
   --chip-bg-selected: var(--color-bg-selected);
@@ -518,6 +551,8 @@
   --badge-padding-y: var(--space-0_5);
   --badge-padding-x: var(--space-2);
   --badge-radius: var(--radius-pill);
+  --badge-bg: var(--color-bg-muted);
+  --badge-fg: var(--color-fg); /* fg-muted는 bg-muted 위에서 다크 4.30:1로 미달이다 */
 
   /* ---------------- 진행 바 ---------------- */
   --progress-height: var(--space-1_5);
