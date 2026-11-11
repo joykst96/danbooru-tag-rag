@@ -37,7 +37,9 @@ from dataclasses import dataclass, field
 
 from . import search as search_mod
 from . import llm
-from .pipeline_structured import describe, count_tags, generate_nl_or_phrase, needs_no_humans, strip_weight_syntax
+from .pipeline_structured import (
+    describe, count_tags, generate_nl_or_phrase, needs_no_humans, strip_weight_syntax, drop_phrases,
+)
 from .config import MAIN_VARIANT
 
 logger = logging.getLogger(__name__)
@@ -290,6 +292,7 @@ async def stream_split_pipeline(
     generate_nl: bool = True,
     nl_tone: str | None = None,
     nl_temperature: float | None = None,
+    include_phrases: bool = True,
 ):
     """
     분할입력 파이프라인 스트리밍 (async generator).
@@ -298,7 +301,19 @@ async def stream_split_pipeline(
       - "characters" : 인물별 처리 결과(이름/태그/미스여부)
       - "final"      : 평탄 합본 태그
       - "nl"         : 인물 단위 자연어 프롬프트
+
+    include_phrases=False: 화면·최종 태그(인물별 tags, background_tags, final_tags)에서 DB 밖 영어 구를 뺀다
+    (pipeline_structured.drop_phrases). no_humans 판정과 자연어 입력은 빼기 전 목록을 쓴다(기본 모드와 같음).
     """
+    phrases_dropped: list[str] = []
+
+    def _out(tokens: list[str]) -> list[str]:
+        if include_phrases:
+            return tokens
+        kept, dropped = drop_phrases(tokens, variant)
+        phrases_dropped.extend(t for t in dropped if t not in phrases_dropped)
+        return kept
+
     background_desc = strip_weight_syntax(background_desc or "")
     char_results: list[CharResult] = []
     for idx, block in enumerate(characters, 1):
@@ -313,7 +328,7 @@ async def stream_split_pipeline(
                 "index": idx,
                 "name": cr.name,
                 "series": cr.series,
-                "tags": cr.output_tags(),
+                "tags": _out(cr.output_tags()),
                 "name_unmatched": cr.name_unmatched,
                 "is_passthrough": cr.is_passthrough,
             },
@@ -326,7 +341,7 @@ async def stream_split_pipeline(
     yield {
         "stage": "background",
         "status": "배경 처리 완료",
-        "data": {"background_tags": background_tags},
+        "data": {"background_tags": _out(background_tags)},
     }
 
     # 평탄 합본: 인원수(칸별 성별 합산) → 인물별 태그 → 배경
@@ -338,17 +353,27 @@ async def stream_split_pipeline(
     # 인물칸이 없는 배경만의 입력: 기본 모드와 같은 규칙으로 no_humans (pipeline_structured.needs_no_humans)
     if not char_results and "no_humans" not in background_tags and needs_no_humans(background_desc, background_tags, variant):
         flat.append("no_humans")
+    nl_flat = list(flat)   # 자연어(배경만인 입력)용: 구를 빼기 전 목록
     for c in char_results:
         for t in c.output_tags():
+            if t not in nl_flat:
+                nl_flat.append(t)
+        for t in _out(c.output_tags()):
             if t not in flat:
                 flat.append(t)
     for t in background_tags:
+        if t not in nl_flat:
+            nl_flat.append(t)
+    for t in _out(background_tags):
         if t not in flat:
             flat.append(t)
+    final_data = {"final_tags": flat}
+    if phrases_dropped:
+        final_data["phrases_dropped"] = phrases_dropped
     yield {
         "stage": "final",
         "status": "태그 완성",
-        "data": {"final_tags": flat},
+        "data": final_data,
     }
 
     # 인물 단위 NL. 인물칸이 없으면(배경만) 기본 모드와 같은 단일 장면 생성기를 쓴다:
@@ -359,7 +384,7 @@ async def stream_split_pipeline(
     nl_prompt = ""
     if generate_nl and (not char_results or nl_tone == "phrase"):
         intent = " / ".join([c.desc for c in char_results if c.desc] + ([background_desc.strip()] if background_desc.strip() else []))
-        basis = flat  # 인물칸이 없으면 flat = (no_humans) + 배경 태그
+        basis = nl_flat  # 인물칸이 없으면 (no_humans) + 배경 태그. 구를 뺐어도 빼기 전 목록
         nl_prompt = await generate_nl_or_phrase(intent, basis, [], nl_tone, variant, temperature=nl_temperature)
     elif generate_nl:
         char_payload = [

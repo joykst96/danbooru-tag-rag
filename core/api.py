@@ -212,6 +212,10 @@ class GenerateRequest(BaseModel):
         default=None,
         description="자연어 톤: rich/plain. None이면 rich. 단어형 보조출력: phrase",
     )
+    include_phrases: bool = Field(
+        default=True,
+        description="최종 태그에 DB 밖 영어 구(선택 단계가 맞는 태그를 못 찾아 낸 구)를 넣을지. 자연어에는 영향 없음",
+    )
 
 
 class DirectSearchRequest(BaseModel):
@@ -239,6 +243,10 @@ class GenerateSplitRequest(BaseModel):
     nl_tone: str | None = Field(
         default=None,
         description="자연어 톤: rich/plain. None이면 rich. 단어형 보조출력: phrase",
+    )
+    include_phrases: bool = Field(
+        default=True,
+        description="최종 태그에 DB 밖 영어 구를 넣을지(GenerateRequest 와 같음)",
     )
 
 
@@ -310,6 +318,7 @@ async def generate(req: GenerateRequest, request: Request):
                 search_categories=_cats,
                 nl_tone=req.nl_tone,
                 nl_temperature=req.nl_temperature,
+                include_phrases=req.include_phrases,
             )
             async for ev in _events:
                 stage = ev["stage"]
@@ -452,6 +461,7 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 generate_nl=True,
                 nl_tone=req.nl_tone,
                 nl_temperature=req.nl_temperature,
+                include_phrases=req.include_phrases,
             ):
                 stage = ev["stage"]
                 d = ev["data"]
@@ -466,6 +476,8 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 elif stage == "final":
                     out["final_prompt"] = ", ".join(d["final_tags"])
                     _final_tags = d["final_tags"]          # 원본(언더스코어 포함) — genlog가 치환
+                    if d.get("phrases_dropped"):
+                        _trace["phrases_dropped"] = d["phrases_dropped"]
                 elif stage == "nl":
                     out["english_prompt"] = d["nl_prompt"]
                     _nl_prompt = d["nl_prompt"]

@@ -44,6 +44,7 @@ function buildRequest() {
         background,
         nl_temperature: parseFloat($("nl_temp").value),
         nl_tone: state.nlTone,
+        include_phrases: $("include_phrases").checked,
       },
     };
   }
@@ -52,6 +53,7 @@ function buildRequest() {
     nl_temperature: parseFloat($("nl_temp").value),
     nl_tone: state.nlTone,
     search_categories: getSearchPoolCategories(),
+    include_phrases: $("include_phrases").checked,
   };
   if (!payload.prompt) return { error: "이미지 묘사를 입력해주세요." };
   return { url: "/api/generate", payload };

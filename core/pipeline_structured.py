@@ -389,6 +389,20 @@ def _phrase_text(p: str) -> str:
     return " ".join(p[len("phrase:"):].replace(",", " ").split())
 
 
+def drop_phrases(tokens: list[str], variant: str) -> tuple[list[str], list[str]]:
+    """
+    DB 태그가 아닌 영어 구를 뺀다 (UI '영어 구 포함' 끔 = 요청 include_phrases=False). 반환: (남은 토큰, 뺀 구).
+    선택이 구로 낸 것이라도 공백을 언더스코어로 바꿔 DB 태그와 같으면("looking at viewer") 태그로 보고 남긴다 —
+    UI 는 어차피 언더스코어를 공백으로 바꿔 보여 주므로 출력 문자열이 같다.
+    인원수·캐릭터 태그에는 쓰지 않는다(호출하는 쪽이 본문 토큰에만 적용).
+    """
+    tagset = search_mod.get_tagset(variant)
+    kept, dropped = [], []
+    for t in tokens:
+        (kept if t in tagset or t.replace(" ", "_") in tagset else dropped).append(t)
+    return kept, dropped
+
+
 async def stream_structured_pipeline(
     korean_prompt: str,
     variant: str = MAIN_VARIANT,
@@ -396,8 +410,13 @@ async def stream_structured_pipeline(
     search_categories: set[int] | None = None,
     nl_tone: str | None = None,
     nl_temperature: float | None = None,
+    include_phrases: bool = True,
 ):
-    """structured 를 단계별로 스트리밍. yield {"stage": korean|english|final|nl, "status": 표시 문구, "data": dict}."""
+    """
+    structured 를 단계별로 스트리밍. yield {"stage": korean|english|final|nl, "status": 표시 문구, "data": dict}.
+    include_phrases=False: 최종 태그에서 DB 밖 영어 구를 뺀다(drop_phrases). no_humans 판정과 자연어 입력은
+    구를 빼기 전 목록을 그대로 쓴다 — 태그 칸만 바뀌고 자연어 결과는 켰을 때와 같다.
+    """
     unit_cats = set(search_categories) if search_categories else set(search_mod.GENERAL_CATS)
     korean_prompt = strip_weight_syntax(korean_prompt)
 
@@ -430,6 +449,10 @@ async def stream_structured_pipeline(
     if not count and not chars and "no_humans" not in body and needs_no_humans(korean_prompt, body, variant):
         count = ["no_humans"]
     final = list(dict.fromkeys(count + char_tags + body))
+    final_out, phrases_dropped = final, []
+    if not include_phrases:
+        body_kept, phrases_dropped = drop_phrases(body, variant)
+        final_out = list(dict.fromkeys(count + char_tags + body_kept))
     # 생성 로그용 추적(api 가 파일 로그에만 남기고 클라이언트로는 보내지 않는다).
     # 조각마다 분해(ko/en) → 후보 태그 이름 → 선택을 한 줄로 이어서, 틀린 태그가 검색 탓인지 선택 탓인지 로그만 보고 가른다.
     trace = {
@@ -442,10 +465,12 @@ async def stream_structured_pipeline(
         ],
         "select_notes": notes,
     }
+    if phrases_dropped:
+        trace["phrases_dropped"] = phrases_dropped
     yield {"stage": "final", "status": "태그 완성",
-           "data": {"final_tags": final, "hallucinated": list(dropped_db), "trace": trace}}
+           "data": {"final_tags": final_out, "hallucinated": list(dropped_db), "trace": trace}}
 
-    # ── 5. 자연어 (기존 톤 기능 그대로) ──
+    # ── 5. 자연어 (기존 톤 기능 그대로. 구를 뺐어도 빼기 전 final 을 쓴다) ──
     nl_prompt = ""
     if generate_nl:
         nl_prompt = await generate_nl_or_phrase(korean_prompt, final, en_units, nl_tone, variant,
@@ -454,9 +479,11 @@ async def stream_structured_pipeline(
 
 
 async def run_structured_pipeline(korean_prompt: str, variant: str = MAIN_VARIANT, generate_nl: bool = False,
-                          search_categories: set[int] | None = None, nl_tone: str | None = None) -> dict:
+                          search_categories: set[int] | None = None, nl_tone: str | None = None,
+                          include_phrases: bool = True) -> dict:
     """스트림을 모아 dict 로 반환 (검증·벤치마크용)."""
     out: dict = {}
-    async for ev in stream_structured_pipeline(korean_prompt, variant, generate_nl, search_categories, nl_tone):
+    async for ev in stream_structured_pipeline(korean_prompt, variant, generate_nl, search_categories, nl_tone,
+                                               include_phrases=include_phrases):
         out.update(ev["data"])
     return out

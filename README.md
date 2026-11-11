@@ -75,7 +75,7 @@ Translating Korean to English tags with an LLM breaks two ways:
 1. **Hallucination**: it invents tags that are not in the DB (e.g. "은발" → `silver_hair`, which doesn't exist; Danbooru merges it into `grey_hair`).
 2. **Detail collapse**: it flattens fine detail ("dragon horns on both sides of the head") into a head term.
 
-Both are blocked by construction. The sentence is split into one-concept units, real tag candidates are retrieved per unit, and the LLM may only pick candidates **by number**. A unit with no matching candidate is kept as a short English phrase instead of being dropped.
+Both are blocked by construction. The sentence is split into one-concept units, real tag candidates are retrieved per unit, and the LLM may only pick candidates **by number**. A unit with no matching candidate is kept as a short English phrase instead of being dropped. Phrases can be left out of the tag list with an option (`include_phrases`); the natural-language prompt still uses them.
 
 ### Features
 
