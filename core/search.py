@@ -11,8 +11,11 @@ LLM 없이 벡터 검색·어휘 일치·실존 태그 확인만 담당한다. v
 """
 
 import logging
+import os
 import re
 from dataclasses import dataclass
+
+import numpy as np
 
 from .config import DEFAULT_TOP_K, CATEGORY_LABELS
 from .database import TagDatabase, SearchResult, distance_to_similarity
@@ -341,14 +344,80 @@ def exact_name_lookup(names: list[str], variant: str, category: int, limit: int 
     return out
 
 
+# ---------------------------------------------------------------------------
+# 메모리 행렬 검색 (2026-11-12)
+# ---------------------------------------------------------------------------
+# LanceDB 전수 검색은 질의 하나에 약 0.3초가 든다(운영 로그 실측: 선택이 즉시 실패한 요청 17건에서 질의당 295~309ms).
+# 조각 하나에 질의가 2개라 조각 30개면 검색만 18초이고, 그동안 이벤트 루프도 막혀 대기열 안내가 멈춘다.
+# 태그 벡터 전체(약 11.8만 x 768, fp32 363MB)를 한 번 메모리에 올려 내적으로 찾으면 결과가 같고 훨씬 빠르다
+# (정규화 벡터라 내적 = 코사인 = 1 - L2²/2. 운영 로그 조각 1,120개의 후보 목록이 LanceDB 결과와 모두 같음을 확인).
+# SEARCH_BACKEND=lancedb 로 예전 경로를 쓸 수 있고, 행렬을 못 올리면(메모리 부족 등) 자동으로 예전 경로를 쓴다.
+_SEARCH_BACKEND = os.environ.get("SEARCH_BACKEND", "matrix").lower()
+_matrix_cache: dict[str, tuple] = {}
+_MATRIX_QUERY_CHUNK = 64   # 한 번에 내적할 질의 수 (결과 행렬 = 태그 수 x 이 값 x 4바이트 ≈ 30MB)
+_matrix_failed: set[str] = set()
+
+
+def get_vector_matrix(variant: str) -> tuple:
+    """(벡터 행렬 fp32 [N, dim], 카테고리 배열 [N], 태그 이름 목록) — 1회 로드 후 캐시."""
+    if variant not in _matrix_cache:
+        t = get_db(variant).table.to_lance().to_table(columns=["tag", "category", "vector"])
+        tags = t.column("tag").to_pylist()
+        cat = np.asarray(t.column("category").to_pylist(), dtype=np.int64)
+        vec = t.column("vector").combine_chunks()
+        mat = np.asarray(vec.flatten(), dtype=np.float32).reshape(len(tags), -1)
+        _matrix_cache[variant] = (mat, cat, tags)
+        logger.info(f"벡터 행렬 로드 (variant={variant}): {mat.shape}, {mat.nbytes / 1e6:.0f}MB")
+    return _matrix_cache[variant]
+
+
+def _search_matrix(vecs, categories: list[set[int]], variant: str, top_k: int) -> list[list[dict]]:
+    mat, cat, tags = get_vector_matrix(variant)
+    rows = get_tag_rows(variant)
+    q = np.asarray(vecs, dtype=np.float32)
+    out: list[list[dict]] = []
+    masks: dict[tuple, np.ndarray] = {}
+    for start in range(0, len(q), _MATRIX_QUERY_CHUNK):
+        # 질의 묶음을 한 번에 내적한다(전체 태그 x 질의). 카테고리는 그 뒤에 거른다 — 부분 행렬을 복사하지 않는다.
+        all_sims = mat @ q[start:start + _MATRIX_QUERY_CHUNK].T
+        for col, cats in enumerate(categories[start:start + _MATRIX_QUERY_CHUNK]):
+            key = tuple(sorted(cats))
+            if key not in masks:
+                masks[key] = np.flatnonzero(np.isin(cat, key))
+            idx = masks[key]
+            sims = all_sims[idx, col]
+            k = min(top_k, len(idx))
+            top = np.argpartition(-sims, k - 1)[:k] if 0 < k < len(idx) else np.arange(len(idx))
+            top = top[np.argsort(-sims[top], kind="stable")]
+            hits = []
+            for j in top:
+                r = rows[tags[idx[j]]]
+                hits.append({"tag": r["tag"], "category": r["category"], "definition": r["definition"],
+                             "aliases": list(r["aliases"]),
+                             "score": round(max(0.0, min(1.0, float(sims[j]))), 4)})
+            out.append(hits)
+    return out
+
+
 def search_prefiltered_multi(texts: list[str], categories: list[set[int]], variant: str, top_k: int = 5) -> list[list[dict]]:
     """
-    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리로 where 사전 필터 검색 (structured 속도판).
-    search_prefiltered 와 결과 형식이 같다. categories[i] 는 texts[i] 의 카테고리 집합.
+    여러 텍스트를 한 번에 임베딩하고, 텍스트마다 자기 카테고리 안에서 가장 가까운 태그 top_k 를 찾는다 (structured 속도판).
+    categories[i] 는 texts[i] 의 카테고리 집합. 기본은 메모리 행렬 검색이고, 못 쓰면 LanceDB where 사전 필터 검색이다(결과 같음).
     """
     if not texts:
         return []
     vecs = EmbeddingManager.embed_queries(texts)
+    if _SEARCH_BACKEND != "lancedb" and variant not in _matrix_failed:
+        try:
+            return _search_matrix(vecs, categories, variant, top_k)
+        except Exception as e:  # 행렬을 못 올리면 예전 경로로 (한 번만 시도)
+            _matrix_failed.add(variant)
+            logger.warning(f"행렬 검색을 쓸 수 없어 LanceDB 검색으로 대체: {e}")
+    return _search_lancedb(vecs, categories, variant, top_k)
+
+
+def _search_lancedb(vecs, categories: list[set[int]], variant: str, top_k: int) -> list[list[dict]]:
+    """예전 경로: 질의마다 LanceDB where 사전 필터 검색."""
     tbl = get_db(variant).table
     out: list[list[dict]] = []
     for v, cats in zip(vecs, categories):

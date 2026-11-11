@@ -211,6 +211,8 @@ async def lifespan(app: FastAPI):
     try:
         search_mod.get_tagset(MAIN_VARIANT)
         search_mod.get_tag_rows(MAIN_VARIANT)   # structured 어휘 일치용 (첫 요청 지연 방지)
+        if search_mod._SEARCH_BACKEND != "lancedb":
+            search_mod.get_vector_matrix(MAIN_VARIANT)   # 메모리 행렬 검색용 벡터 (첫 요청 지연 방지)
     except Exception as e:
         logger.warning(f"태그집합 프리로드 실패(첫 요청 시 재시도): {e}")
     logger.info("준비 완료")
