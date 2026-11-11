@@ -109,6 +109,11 @@ export async function generateTags() {
         showDuplicateModal(chunk.message || "동일 IP로 처리 중인 작업이 있습니다.");
         return false;   // 스트림 중단
       }
+      // 파이프라인 실패: 서버가 스트림을 끊지 않고 오류 이벤트를 보낸다(api.py _error_event)
+      if (chunk.status === "error") {
+        showError(chunk.message || "생성 중 오류가 발생했습니다.");
+        return false;
+      }
       if (chunk.status) {
         btnText.textContent = chunk.status;
         showQueueStatus(chunk.status);

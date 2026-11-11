@@ -26,6 +26,7 @@ from . import search as search_mod
 from .pipeline_structured import stream_structured_pipeline
 from .pipeline_split import stream_split_pipeline, CharBlock
 from . import genlog
+from .exceptions import LLMError
 from .config import (
     PROJECT_ROOT, TAGS_CSV_PATH, DEFAULT_TOP_K, CATEGORY_LABELS,
     MAIN_VARIANT, GEMMA2_LOCAL_NAME,
@@ -54,6 +55,7 @@ import time as _time
 
 _gen_lock = _asyncio.Lock()           # next/serving 갱신 보호
 _gen_state = {"next": 0, "serving": 1}  # 발급 카운터 / 현재 처리할 번호
+_left_tickets: set[int] = set()        # 차례가 오기 전에 떠난(연결 끊김) 번호 — serving 이 건너뛴다
 _active_ips: set[str] = set()          # 큐 대기 또는 처리 중인 클라이언트 IP
 
 
@@ -123,22 +125,49 @@ async def _take_ticket() -> int:
         return _gen_state["next"]
 
 
+def _ahead(my: int) -> int:
+    """티켓 my 앞에 남은 인원(처리 중 포함, 떠난 번호 제외)."""
+    serving = _gen_state["serving"]
+    return max(0, my - serving - sum(1 for t in _left_tickets if serving <= t < my))
+
+
 def _waiting_count(my: int) -> int:
-    """티켓 my 기준 대기 인원(자기 포함). serving 이 처리할 번호, my 가 내 번호.
-    my==serving 이면 1(바로 나), 앞에 막힌 게 있으면 그만큼 +."""
-    return max(1, my - _gen_state["serving"] + 1)
+    """티켓 my 기준 대기 인원(자기 포함). my==serving 이면 1(바로 나)."""
+    return _ahead(my) + 1
 
 
-async def _advance_serving():
+async def _leave_queue(my: int, started: bool) -> None:
+    """
+    요청이 끝날 때(성공·실패·연결끊김) 부른다.
+    처리 중이었거나 막 차례가 온 요청만 serving 을 넘기고, 차례 전에 떠난 요청은 번호만 표시해 둔다.
+    2026-11-12 이전에는 대기 중에 끊긴 요청도 serving 을 올려서, 뒤 번호가 먼저 끊기면 앞 대기자가
+    처리 중인 요청과 동시에 시작했다(동시 1개 보장 깨짐, 재현 확인).
+    """
     async with _gen_lock:
-        _gen_state["serving"] += 1
+        if started or _gen_state["serving"] == my:
+            _gen_state["serving"] += 1
+            while _gen_state["serving"] in _left_tickets:   # 이미 떠난 번호는 건너뛴다
+                _left_tickets.discard(_gen_state["serving"])
+                _gen_state["serving"] += 1
+        else:
+            _left_tickets.add(my)
+
+
+def _error_event(e: BaseException) -> str:
+    """파이프라인 예외 → 클라이언트 오류 이벤트(NDJSON 한 줄). 예전에는 예외를 다시 던져 스트림이 그냥 끊겼다."""
+    if isinstance(e, LLMError):
+        msg = "LLM 처리에 실패했습니다. 입력이 너무 길거나 서버가 바쁠 수 있습니다. 입력을 줄이거나 잠시 뒤 다시 시도해 주세요."
+    else:
+        msg = "생성 중 오류가 발생했습니다. 잠시 뒤 다시 시도해 주세요."
+    return json.dumps({"status": "error", "reason": type(e).__name__, "message": msg, "data": {}},
+                      ensure_ascii=False) + "\n"
 
 
 async def _wait_for_turn(my: int):
     """티켓 my 차례가 올 때까지 대기번호를 실시간 yield (generate/generate_split 공유)."""
     notified = None
     while _gen_state["serving"] < my:
-        ahead = my - _gen_state["serving"]
+        ahead = _ahead(my)
         if ahead != notified:
             notified = ahead
             yield json.dumps(
@@ -302,10 +331,12 @@ async def generate(req: GenerateRequest, request: Request):
                 error=err,
             )
 
+        started = False
         try:
             # 내 차례(serving == my)가 올 때까지 대기번호 실시간 표시
             async for w in _wait_for_turn(my):
                 yield w
+            started = True
             _timing["queue"] = _ms_since(t0)
             t_turn = _time.monotonic()
 
@@ -360,15 +391,17 @@ async def generate(req: GenerateRequest, request: Request):
                 req_id=rid,
             )
         except Exception as e:
-            # 파이프라인 예외 — 콘솔과 파일(status=error)에 남기고 차례는 넘긴다.
+            # 파이프라인 예외 — 콘솔과 파일(status=error)에 남기고, 클라이언트에는 오류 이벤트를 보낸 뒤 스트림을 정상 종료.
             genlog.console_log_error("basic", req.prompt.strip(), e, req_id=rid)
+            if not isinstance(e, LLMError):
+                logger.exception("파이프라인 예외 (basic)")   # 코드 버그는 트레이스백을 남긴다
             _log("error", e)
-            raise
+            yield _error_event(e)
         finally:
             # 여기까지 기록이 없으면 클라이언트 연결끊김 등으로 중단된 것(GeneratorExit/CancelledError).
             _log("aborted")
-            # 성공/실패/연결끊김 무엇이든 다음 사람에게 차례를 넘겨야 큐가 안 막힘
-            await _advance_serving()
+            # 성공/실패/연결끊김 무엇이든 큐가 막히지 않게 정리 (대기 중에 떠났으면 번호만 표시)
+            await _leave_queue(my, started)
             await _release_ip(client_ip)
 
     return StreamingResponse(
@@ -447,9 +480,11 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 error=err,
             )
 
+        started = False
         try:
             async for w in _wait_for_turn(my):
                 yield w
+            started = True
             _timing["queue"] = _ms_since(t0)
             t_turn = _time.monotonic()
 
@@ -501,11 +536,13 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
             )
         except Exception as e:
             genlog.console_log_error("split", _err_input, e, req_id=rid)
+            if not isinstance(e, LLMError):
+                logger.exception("파이프라인 예외 (split)")
             _log("error", e)
-            raise
+            yield _error_event(e)
         finally:
             _log("aborted")   # 기록이 없으면 연결끊김 등으로 중단된 것
-            await _advance_serving()
+            await _leave_queue(my, started)
             await _release_ip(client_ip)
 
     return StreamingResponse(

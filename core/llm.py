@@ -192,6 +192,18 @@ def _build_payload(system: str, user: str, temperature: float) -> dict:
     return payload
 
 
+def _http_error_text(e: Exception) -> str:
+    """
+    LLM 호출 예외 → 로그용 문구. HTTP 오류면 상태 코드와 응답 본문 앞부분을 넣는다.
+    raise_for_status 의 기본 문구에는 본문이 없어서, 선택 프롬프트가 컨텍스트를 넘긴 400
+    ("request (11006 tokens) exceeds the available context size")이 LLM 서버 로그에만 남았다(2026-11-12 점검).
+    """
+    if isinstance(e, httpx.HTTPStatusError):
+        body = " ".join(e.response.text.split())[:300]
+        return f"HTTP {e.response.status_code}: {body}"
+    return str(e)
+
+
 async def _call(system: str, user: str, temperature: float, timeout: float = 120.0) -> str:
     """LLM 호출 후 content 문자열 반환."""
     payload = _build_payload(system, user, temperature)
@@ -202,7 +214,7 @@ async def _call(system: str, user: str, temperature: float, timeout: float = 120
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            raise LLMError(f"LLM 호출 실패: {e}")
+            raise LLMError(f"LLM 호출 실패: {_http_error_text(e)}")
 
 
 async def _call_json(
@@ -276,7 +288,7 @@ async def _call_json_once(system, user, schema, name, temperature, seed, timeout
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            raise LLMError(f"LLM 호출 실패: {e}")
+            raise LLMError(f"LLM 호출 실패: {_http_error_text(e)}")
     choice = data["choices"][0]
     content = (choice["message"].get("content") or "").strip()
     finish = choice.get("finish_reason")
