@@ -132,6 +132,22 @@
   --ac-mark-bg: var(--color-accent-subtle-hover);
   --ac-mark-radius: var(--radius-xs);
 
+  /* ---------------- 생성 리포트 모달 ----------------
+     표(한국어·영어·후보·선택 4열)가 들어가서 기본 다이얼로그 폭의 두 배로 둔다. */
+  --report-width: calc(var(--dialog-width) * 2);
+  --report-table-min-width: var(--dialog-width);   /* 좁은 화면에서는 표만 가로로 민다 */
+  --report-chip-bg: var(--color-bg-muted);
+  --report-chip-border: var(--color-border);
+  --report-swatch-size: var(--space-3);
+  --report-bar-height: var(--space-6);
+  /* 시간 막대의 단계 색: 뜻 없는 구분이라 라벨 색을 옅게 깔고 글자는 전경색으로 쓴다 */
+  --report-seg-1: var(--color-label-blue);
+  --report-seg-2: var(--color-label-purple);
+  --report-seg-3: var(--color-label-green);
+  --report-seg-4: var(--color-label-orange);
+  --report-seg-5: var(--color-label-red);
+  --report-seg-tint: var(--alpha-medium);
+
   /* ---------------- 레이어 ---------------- */
   --layer-dropdown: var(--z-dropdown);
   --layer-modal: var(--z-modal);

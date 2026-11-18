@@ -1,0 +1,330 @@
+/* ==========================================================================
+   생성 리포트 · 결과 패널의 열기 버튼 + 모달 (web/js/report.js)
+   ========================================================================== */
+
+/* ── 결과 패널 아래 열기 버튼 ── (빈 상태·결과 상자와의 간격은 부모 gap) */
+#result_panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-lg);
+}
+.report-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  text-align: center;
+}
+
+/* ── 모달 ── */
+body.report-open {
+  overflow: hidden;
+}
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--inset-xl);
+  background: var(--dialog-backdrop);
+}
+.report-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--report-width);
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--dialog-bg);
+  border: var(--border-width-thin) solid var(--dialog-border);
+  border-radius: var(--dialog-radius);
+  box-shadow: var(--dialog-shadow);
+}
+.report-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-lg);
+  padding: var(--inset-md) var(--dialog-padding);
+  border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+.report-title {
+  flex-shrink: 0;
+  font: var(--dialog-title-font);
+  color: var(--color-fg);
+}
+.report-meta {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-xs) var(--gap-md);
+  min-width: 0;
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.report-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  font: var(--icon-button-sm-font);
+  color: var(--icon-button-fg);
+  background: var(--icon-button-bg);
+  border: var(--border-width-thin) solid var(--icon-button-border);
+  border-radius: var(--icon-button-radius);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.report-close:hover {
+  color: var(--icon-button-fg-hover);
+  border-color: var(--icon-button-border-hover);
+}
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xl);
+  padding: var(--dialog-padding);
+  overflow-y: auto;
+  font: var(--font-body-sm);
+  color: var(--color-fg);
+}
+
+/* ── 구역 ── */
+.rp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+.rp-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  min-height: var(--field-label-height);
+}
+.rp-section-head h3 {
+  flex: 1;
+  font: var(--panel-title-font);
+  letter-spacing: var(--letter-spacing-overline);
+  color: var(--panel-title-fg);
+}
+/* .copy-btn 은 결과 상자 오른쪽 위에 절대 배치된다. 여기서는 제목 줄 안에 둔다. */
+.rp-copy {
+  position: static;
+}
+.rp-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  padding: var(--inset-md);
+  background: var(--color-bg-sunken);
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--input-radius);
+}
+.rp-box.rp-error {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger-border);
+}
+.rp-pre {
+  font: var(--prose-font);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rp-none,
+.rp-sub {
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.rp-sub-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-md);
+}
+.rp-notes {
+  margin: 0;
+  padding-left: var(--inset-lg);
+}
+
+/* ── 배지 (상태·모드·인물칸 표시) ── */
+.rp-badge {
+  padding: var(--badge-padding-y) var(--badge-padding-x);
+  font: var(--badge-font);
+  color: var(--badge-fg);
+  background: var(--badge-bg);
+  border-radius: var(--badge-radius);
+}
+.rp-badge.ok {
+  color: var(--color-success);
+  background: var(--color-success-subtle);
+}
+.rp-badge.error {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+}
+.rp-badge.warn {
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+/* ── 태그 칩 ── */
+.rp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+}
+.rp-chip {
+  padding: var(--mini-tag-padding-y) var(--mini-tag-padding-x);
+  font: var(--font-label);
+  color: var(--color-fg);
+  background: var(--report-chip-bg);
+  border: var(--border-width-thin) solid var(--report-chip-border);
+  border-radius: var(--mini-tag-radius);
+  cursor: default;
+}
+/* 설명이 있는 칩 */
+.rp-chip[data-tooltip] {
+  cursor: help;
+}
+.rp-chip[data-tooltip]:hover {
+  border-color: var(--color-accent);
+}
+.rp-chip.pick {
+  font-weight: var(--tag-weighted-weight);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent-border);
+}
+.rp-chip.warn {
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+  border-color: var(--color-warning-border);
+}
+.rp-chip.phrase {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--color-border-control);
+}
+.rp-chip.del {
+  color: var(--color-fg-muted);
+  text-decoration: line-through;
+  background: transparent;
+}
+
+/* ── 설정 표 ── */
+.rp-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--gap-xs) var(--gap-xl);
+  margin: 0;
+}
+.rp-kv dt {
+  color: var(--color-fg-muted);
+}
+.rp-kv dd {
+  margin: 0;
+}
+
+/* ── 조각별 분해 → 후보 → 선택 ── */
+.rp-table-wrap {
+  overflow-x: auto;
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--input-radius);
+}
+.rp-table {
+  width: 100%;
+  min-width: var(--report-table-min-width);
+  border-collapse: collapse;
+}
+.rp-table th,
+.rp-table td {
+  padding: var(--inset-sm);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+.rp-table th {
+  font: var(--font-label);
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+}
+.rp-table tr:last-child td {
+  border-bottom: 0;
+}
+.rp-table .rp-ko {
+  white-space: nowrap;
+}
+
+/* ── 범례 (표·시간 막대 공용) ── */
+.rp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-xs) var(--gap-xl);
+  font: var(--font-caption);
+  color: var(--color-fg-muted);
+}
+.rp-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+.rp-legend b {
+  font-weight: var(--tag-weighted-weight);
+  color: var(--color-fg);
+}
+.rp-legend i {
+  width: var(--report-swatch-size);
+  height: var(--report-swatch-size);
+  padding: 0;
+  border-radius: var(--mini-tag-radius);
+}
+
+/* ── 시간 막대 ── */
+.rp-bar {
+  display: flex;
+  height: var(--report-bar-height);
+  overflow: hidden;
+  border: var(--border-width-thin) solid var(--color-border);
+  border-radius: var(--input-radius);
+}
+.rp-bar .rp-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--border-width-thick);
+  overflow: hidden;
+  font: var(--font-caption);
+  color: var(--color-fg);
+  white-space: nowrap;
+}
+.rp-seg {
+  background: color-mix(in srgb, var(--_seg) var(--report-seg-tint), transparent);
+}
+.rp-seg.wait { --_seg: var(--color-fg-muted); }
+.rp-seg.s1 { --_seg: var(--report-seg-1); }
+.rp-seg.s2 { --_seg: var(--report-seg-2); }
+.rp-seg.s3 { --_seg: var(--report-seg-3); }
+.rp-seg.s4 { --_seg: var(--report-seg-4); }
+.rp-seg.s5 { --_seg: var(--report-seg-5); }
+
+/* ── 인물칸 (분할 모드) ── */
+.rp-char-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-md);
+}
+
+@media (max-width: 600px) {
+  .report-overlay {
+    padding: var(--inset-sm);
+  }
+  .report-head {
+    align-items: flex-start;
+  }
+}

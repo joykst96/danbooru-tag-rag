@@ -1,6 +1,13 @@
 // 글로벌 툴팁: data-tooltip 속성이 있는 요소에 마우스를 올리면 설명을 띄운다.
+let globalTooltip = null;
+
+// 호버 중인 요소를 화면에서 치울 때 부른다(요소가 사라지면 mouseout 이 오지 않아 툴팁이 남는다).
+export function hideTooltip() {
+  if (globalTooltip) globalTooltip.style.display = "none";
+}
+
 export function initTooltip() {
-  const globalTooltip = document.createElement("div");
+  globalTooltip = document.createElement("div");
   globalTooltip.className = "custom-tooltip";
   document.body.appendChild(globalTooltip);
 

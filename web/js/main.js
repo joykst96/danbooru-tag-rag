@@ -16,6 +16,7 @@ import {
 } from "./results.js";
 import { toggleCat, setDirectClickMode, searchDirectDB, renderDirectDBResults } from "./direct-search.js";
 import { generateTags, closeDuplicateModal } from "./generate.js";
+import { initReport, refreshReport } from "./report.js";
 
 const on = (el, type, fn) => el.addEventListener(type, fn);
 const each = (selector, fn) => document.querySelectorAll(selector).forEach(fn);
@@ -68,7 +69,9 @@ finalEdit.addEventListener("focus", acEnsureLoaded, { once: true });
 setOnTagDataBuilt(() => {
   if (state.result && state.result.final_prompt) displayResults();
   if (state.directResults) renderDirectDBResults();
+  refreshReport();   // 열려 있는 리포트의 태그 설명
 });
+initReport();
 
 each(".copy-btn[data-copy]", (b) => on(b, "click", () => copyToClipboard(b.dataset.copy)));
 on($("copy_all_btn"), "click", copyAll);

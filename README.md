@@ -30,6 +30,7 @@ and a local LLM (llama.cpp). Tags that are not in the database never reach the o
 - **자연어 톤**: 묘사적 / 담백 / 단어형+(짧은 영어 구 나열) 중에서 고릅니다.
 - **출력 편집**: 가중치 표기(로컬 `(tag:1.2)` / NAI `1.2::tag::`), 퀄리티·작가 고정 태그, 결과 태그 직접 편집, 뱃지 휠로 가중치 조절을 지원합니다.
 - **직접 검색**: 단어 하나로 태그 DB를 바로 찾아봅니다(UI 우측 패널, `/api/direct_search`).
+- **생성 리포트**: 방금 생성한 요청이 어떤 조각으로 나뉘고 어떤 후보에서 태그가 골라졌는지 모달로 봅니다. 그 요청의 응답에만 실려 오고, 새로고침하거나 다시 생성하면 사라집니다.
 
 ### 요구 사항
 
@@ -84,6 +85,7 @@ Both are blocked by construction. The sentence is split into one-concept units, 
 - **Natural-language tone**: descriptive / plain / phrase+ (short comma-separated phrases).
 - **Output editing**: local `(tag:1.2)` or NAI `1.2::tag::` weight syntax, fixed quality/artist tags, editable result tags, wheel-adjustable weights.
 - **Direct search**: look up the tag DB with a single word (right panel, `/api/direct_search`).
+- **Generation report**: a modal showing how your last request was split into units and which candidates the tags were picked from. It arrives only in that request's own response and is gone on reload or the next generation.
 
 ### Requirements
 

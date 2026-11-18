@@ -4,6 +4,9 @@
 export const state = {
   // 생성 결과(NDJSON data 이벤트를 누적). null 이면 아직 생성 전.
   result: null,
+  // 방금 끝난 생성 1건의 리포트(스트림 마지막 줄로 받은 것). 메모리에만 둔다 — 저장소·URL 에 넣지 않는다.
+  // 새 생성을 시작하면 지운다(report.js clearReport). 서버에서 다시 받아올 방법은 없다.
+  report: null,
   // 직접조회 결과 배열. null 이면 조회 전.
   directResults: null,
   // 입력 모드: "basic"(한 문장) / "split"(인물 분할)

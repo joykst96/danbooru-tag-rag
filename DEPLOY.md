@@ -112,6 +112,16 @@ curl http://localhost:3333/api/health      # {"status":"ok","variant":"sim","emb
 - 콘솔 로그를 HTTP로 돌려주던 `/api/logs`는 없앴습니다(404). 콘솔 로그에는 모든 사용자의 입력·결과가 찍히는데
   인증 없이 열려 있었습니다. 로그는 서버에서만 봅니다.
 
+### 사용자에게 보이는 생성 리포트
+
+생성이 끝나면 결과 패널 아래 "생성 리포트 보기" 버튼이 생깁니다(분해 조각 → 후보 → 선택, 걸린 시간, 설정).
+
+- 리포트는 그 요청의 응답 스트림 마지막 줄에 한 번만 실립니다. 리포트를 조회하는 API는 없고 서버는 리포트를 보관하지 않습니다.
+  브라우저도 메모리에만 두므로 새로고침하거나 다시 생성하면 사라집니다.
+- 내용은 파일 로그 레코드에서 `id, ts, status, mode, input, final_tags_raw, nl_prompt, request, trace, timing_ms`만 고른 것입니다.
+  `build`와 `error.message`는 나가지 않습니다(`core/genlog.py` `public_report`).
+- `trace`가 사용자에게 그대로 보이므로, 파이프라인의 trace 에 서버 내부 정보를 넣지 않습니다.
+
 ### 파일 로그 (저장)
 
 생성 요청 1건이 파일에 한 줄(JSON Lines)로 남습니다. 기본 모드(`/api/generate`)·고급 분할 모드(`/api/generate_split`) 둘 다 기록됩니다.

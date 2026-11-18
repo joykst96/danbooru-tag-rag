@@ -552,7 +552,8 @@ async def stream_structured_pipeline(
     if not include_phrases:
         body_kept, phrases_dropped = drop_phrases(body, variant)
         final_out = list(dict.fromkeys(count + char_tags + body_kept))
-    # 생성 로그용 추적(api 가 파일 로그에만 남기고 클라이언트로는 보내지 않는다).
+    # 생성 로그용 추적. api 가 파일 로그에 남기고, 요청한 사람에게도 스트림 끝의 리포트로 통째로 보낸다
+    # (genlog.public_report). 그러니 이 요청의 입력·중간 결과만 넣는다 — 서버 내부 정보는 넣지 않는다.
     # 조각마다 분해(ko/en) → 후보 태그 이름 → 선택을 한 줄로 이어서, 틀린 태그가 검색 탓인지 선택 탓인지 로그만 보고 가른다.
     trace = {
         "people": count,

@@ -8,6 +8,8 @@ API 모듈 (배포용)
 
 응답 필드명은 UI(index.html)가 기대하는 형태로 매핑한다:
     ko_units / person_units / keywords / final_prompt(쉼표문자열) / suspicious_tags / english_prompt
+
+생성 스트림의 마지막 줄에는 그 요청의 리포트(report)가 실린다(_report_event). 리포트를 따로 조회하는 API는 없다.
 """
 
 import json
@@ -151,13 +153,32 @@ async def _leave_queue(my: int, started: bool) -> None:
             _left_tickets.add(my)
 
 
-def _error_event(e: BaseException) -> str:
-    """파이프라인 예외 → 클라이언트 오류 이벤트(NDJSON 한 줄). 예전에는 예외를 다시 던져 스트림이 그냥 끊겼다."""
+def _error_event(e: BaseException, record: dict | None = None) -> str:
+    """
+    파이프라인 예외 → 클라이언트 오류 이벤트(NDJSON 한 줄). 예전에는 예외를 다시 던져 스트림이 그냥 끊겼다.
+    record 가 있으면 거기까지의 리포트를 같이 싣는다(오류 이벤트가 스트림의 마지막 줄이라 따로 보낼 자리가 없다).
+    """
     if isinstance(e, LLMError):
         msg = "LLM 처리에 실패했습니다. 입력이 너무 길거나 서버가 바쁠 수 있습니다. 입력을 줄이거나 잠시 뒤 다시 시도해 주세요."
     else:
         msg = "생성 중 오류가 발생했습니다. 잠시 뒤 다시 시도해 주세요."
-    return json.dumps({"status": "error", "reason": type(e).__name__, "message": msg, "data": {}},
+    ev = {"status": "error", "reason": type(e).__name__, "message": msg, "data": {}}
+    if record:
+        ev["report"] = genlog.public_report(record)
+    return json.dumps(ev, ensure_ascii=False) + "\n"
+
+
+def _report_event(record: dict) -> str:
+    """
+    생성 리포트 이벤트(NDJSON 한 줄). 생성이 끝난 요청의 응답 스트림 맨 끝에 한 번만 보낸다.
+
+    리포트를 주는 길은 이것 하나다. 일부러 이렇게 둔다:
+      - 리포트를 돌려주는 엔드포인트를 만들지 않는다(요청 id·쿼리스트링으로 조회하는 길이 없어야 한다).
+      - 서버는 리포트를 메모리에 보관하지 않는다. 방금 만든 레코드를 그 요청의 스트림에 쓰고 끝이다.
+      - 내용은 요청 본문·쿼리와 무관하게 정해진다(genlog.public_report 허용 목록).
+    그래서 남의 리포트를 받을 방법이 없고, 자기 것도 이 응답을 놓치면 다시 받을 수 없다.
+    """
+    return json.dumps({"status": "완료", "data": {}, "report": genlog.public_report(record)},
                       ensure_ascii=False) + "\n"
 
 
@@ -289,15 +310,16 @@ async def generate(req: GenerateRequest, request: Request):
         _trace: dict = {}
         _timing: dict = {"stages": {}}
         _logged = False
+        _record: dict | None = None      # 파일에 남긴 레코드. 사용자 리포트의 원본
 
         def _log(status: str, err: BaseException | None = None) -> None:
             # 성공·실패·중단 모두 한 번만 파일에 남긴다. 실패·중단이면 거기까지의 단계만 담긴다.
-            nonlocal _logged
+            nonlocal _logged, _record
             if _logged:
                 return
             _logged = True
             _timing["total"] = _ms_since(t0)
-            genlog.log_generation(
+            _record = genlog.log_generation(
                 user_input=req.prompt.strip(),
                 final_tags=_final_tags,
                 nl_prompt=_nl_prompt,
@@ -347,7 +369,7 @@ async def generate(req: GenerateRequest, request: Request):
                     out["suspicious_tags"] = d["hallucinated"]
                     _final_tags = d["final_tags"]          # 원본(언더스코어 포함) — genlog가 치환
                     _trace["hallucinated"] = d["hallucinated"]
-                    _trace.update(d.get("trace") or {})    # 파일 로그 전용(클라이언트로 안 보냄)
+                    _trace.update(d.get("trace") or {})    # 이 이벤트로는 안 보낸다. 파일 로그와 스트림 끝의 리포트에만 실린다
                 elif stage == "nl":
                     out["english_prompt"] = d["nl_prompt"]
                     _nl_prompt = d["nl_prompt"]
@@ -369,13 +391,15 @@ async def generate(req: GenerateRequest, request: Request):
                 },
                 req_id=rid,
             )
+            if _record:
+                yield _report_event(_record)   # 스트림의 마지막 줄 (기록·콘솔 출력이 끝난 뒤)
         except Exception as e:
             # 파이프라인 예외 — 콘솔과 파일(status=error)에 남기고, 클라이언트에는 오류 이벤트를 보낸 뒤 스트림을 정상 종료.
             genlog.console_log_error("basic", req.prompt.strip(), e, req_id=rid)
             if not isinstance(e, LLMError):
                 logger.exception("파이프라인 예외 (basic)")   # 코드 버그는 트레이스백을 남긴다
             _log("error", e)
-            yield _error_event(e)
+            yield _error_event(e, _record)
         finally:
             # 여기까지 기록이 없으면 클라이언트 연결끊김 등으로 중단된 것(GeneratorExit/CancelledError).
             _log("aborted")
@@ -430,16 +454,17 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
         _trace: dict = {"characters": []}
         _timing: dict = {"stages": {}}
         _logged = False
+        _record: dict | None = None      # 파일에 남긴 레코드. 사용자 리포트의 원본
         input_summary = _split_input_summary(req)
 
         def _log(status: str, err: BaseException | None = None) -> None:
             # 성공·실패·중단 모두 한 번만 파일에 남긴다. 분할입력은 사람이 읽기 좋은 요약을 input 에.
-            nonlocal _logged
+            nonlocal _logged, _record
             if _logged:
                 return
             _logged = True
             _timing["total"] = _ms_since(t0)
-            genlog.log_generation(
+            _record = genlog.log_generation(
                 user_input=input_summary,
                 final_tags=_final_tags,
                 nl_prompt=_nl_prompt,
@@ -513,12 +538,14 @@ async def generate_split(req: GenerateSplitRequest, request: Request):
                 },
                 req_id=rid,
             )
+            if _record:
+                yield _report_event(_record)   # 스트림의 마지막 줄
         except Exception as e:
             genlog.console_log_error("split", _err_input, e, req_id=rid)
             if not isinstance(e, LLMError):
                 logger.exception("파이프라인 예외 (split)")
             _log("error", e)
-            yield _error_event(e)
+            yield _error_event(e, _record)
         finally:
             _log("aborted")   # 기록이 없으면 연결끊김 등으로 중단된 것
             await _leave_queue(my, started)

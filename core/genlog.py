@@ -128,6 +128,47 @@ def _spacify(tags: list[str]) -> list[str]:
     return [t.replace("_", " ") for t in tags]
 
 
+def build_record(
+    user_input: str,
+    final_tags: list[str],
+    nl_prompt: str,
+    mode: str = "basic",
+    extra: dict | None = None,
+    *,
+    req_id: str | None = None,
+    status: str = "ok",
+    request: dict | None = None,
+    trace: dict | None = None,
+    timing_ms: dict | None = None,
+    error: BaseException | None = None,
+) -> dict:
+    """생성 1건의 레코드(v2)를 만든다. 파일에 쓰지는 않는다. 인자는 log_generation 과 같다."""
+    record = {
+        "v": SCHEMA_VERSION,
+        "id": req_id or new_request_id(),
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "status": status,
+        "mode": mode,
+        "input": user_input,
+        "final_tags": _spacify(final_tags),                # 언더스코어→공백
+        "final_tags_str": ", ".join(_spacify(final_tags)),  # 사람이 보기 쉬운 한 줄
+        "nl_prompt": nl_prompt,
+    }
+    if extra:
+        record["extra"] = extra
+    record["final_tags_raw"] = list(final_tags)
+    if request is not None:
+        record["request"] = request
+    if trace:
+        record["trace"] = trace
+    if timing_ms:
+        record["timing_ms"] = timing_ms
+    if error is not None:
+        record["error"] = {"type": type(error).__name__, "message": str(error)[:500]}
+    record["build"] = build_info()
+    return record
+
+
 def log_generation(
     user_input: str,
     final_tags: list[str],
@@ -141,7 +182,7 @@ def log_generation(
     trace: dict | None = None,
     timing_ms: dict | None = None,
     error: BaseException | None = None,
-) -> None:
+) -> dict | None:
     """
     생성 1건을 파일에 기록. 형식은 모듈 docstring(v2) 참고.
 
@@ -152,40 +193,45 @@ def log_generation(
         mode: "basic" | "split".
         extra: 추가로 남길 메타(선택). v1 과 같은 자리.
         req_id / status / request / trace / timing_ms / error: v2 필드.
+
+    Returns:
+        만든 레코드. api 가 이 요청의 사용자 리포트(public_report)를 만드는 데 쓴다.
+        파일 쓰기만 실패했으면 레코드는 그대로 돌려주고, 레코드를 못 만들었으면 None.
     """
+    record = None
     try:
+        record = build_record(
+            user_input, final_tags, nl_prompt, mode, extra,
+            req_id=req_id, status=status, request=request, trace=trace, timing_ms=timing_ms, error=error,
+        )
         path = _dated_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        record = {
-            "v": SCHEMA_VERSION,
-            "id": req_id or new_request_id(),
-            "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "status": status,
-            "mode": mode,
-            "input": user_input,
-            "final_tags": _spacify(final_tags),                # 언더스코어→공백
-            "final_tags_str": ", ".join(_spacify(final_tags)),  # 사람이 보기 쉬운 한 줄
-            "nl_prompt": nl_prompt,
-        }
-        if extra:
-            record["extra"] = extra
-        record["final_tags_raw"] = list(final_tags)
-        if request is not None:
-            record["request"] = request
-        if trace:
-            record["trace"] = trace
-        if timing_ms:
-            record["timing_ms"] = timing_ms
-        if error is not None:
-            record["error"] = {"type": type(error).__name__, "message": str(error)[:500]}
-        record["build"] = build_info()
-
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as e:
         # 로그 실패는 응답을 막지 않는다.
         logger.warning(f"생성 로그 기록 실패: {e}")
+    return record
+
+
+# ── 사용자 리포트 ──────────────────────────────────────────────────
+# 요청한 사람에게 그 요청의 응답 스트림 끝에 한 번 실어 보내는 리포트(api._report_event).
+# 레코드에서 아래 키만 골라 담는다(허용 목록). 여기 없는 키는 나가지 않는다:
+#   build          서버 코드·데이터·모델 버전
+#   error.message  LLM 서버 주소나 응답 본문이 섞일 수 있다(type 만 보낸다)
+#   final_tags / final_tags_str / extra   다른 키와 내용이 겹친다
+# request·trace 는 통째로 나간다. 둘 다 그 요청의 입력과 중간 결과뿐이어야 하므로,
+# 서버 내부 정보나 다른 요청의 값을 trace 에 넣지 않는다.
+_REPORT_KEYS = ("id", "ts", "status", "mode", "input", "final_tags_raw", "nl_prompt",
+                "request", "trace", "timing_ms")
+
+
+def public_report(record: dict) -> dict:
+    """레코드 → 사용자에게 보여도 되는 부분만 담은 리포트."""
+    report = {k: record[k] for k in _REPORT_KEYS if k in record}
+    if record.get("error"):
+        report["error"] = {"type": record["error"].get("type")}
+    return report
 
 
 # ── 콘솔(stdout) 로그 ──────────────────────────────────────────────

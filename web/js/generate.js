@@ -4,6 +4,7 @@ import { streamNdjson } from "./api.js";
 import { collectCharacters, getSearchPoolCategories } from "./input-form.js";
 import { displayResults } from "./results.js";
 import { acEnsureLoaded } from "./tag-data.js";
+import { setReport, clearReport } from "./report.js";
 
 export function showDuplicateModal(msg) {
   const m = $("dup_modal");
@@ -84,6 +85,7 @@ export async function generateTags() {
   btnText.textContent = "생성 준비 중...";
 
   state.result = {};
+  clearReport();   // 이전 생성의 리포트는 새 요청을 누르는 순간 버린다(열려 있던 모달도 닫힌다)
   // 새 생성 시작: 편집 textarea 비움(이전 결과 잔류 방지)
   const fpEdit = $("final_prompt_edit");
   if (fpEdit) fpEdit.value = "";
@@ -109,6 +111,8 @@ export async function generateTags() {
         showDuplicateModal(chunk.message || "동일 IP로 처리 중인 작업이 있습니다.");
         return false;   // 스트림 중단
       }
+      // 이 요청의 리포트: 스트림의 마지막 줄(성공이면 따로 한 줄, 실패면 오류 이벤트)에 한 번 실려 온다.
+      if (chunk.report) setReport(chunk.report);
       // 파이프라인 실패: 서버가 스트림을 끊지 않고 오류 이벤트를 보낸다(api.py _error_event)
       if (chunk.status === "error") {
         showError(chunk.message || "생성 중 오류가 발생했습니다.");
