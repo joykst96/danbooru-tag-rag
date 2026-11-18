@@ -5,7 +5,6 @@ API 모듈 (배포용)
 - /api/generate      : 기본 모드. structured 파이프라인(core/pipeline_structured.py)을 NDJSON 스트림으로 응답
 - /api/generate_split: 고급(분할) 모드. 인물칸 N + 배경칸 1 (core/pipeline_split.py)
 - /api/direct_search : 단일 쿼리 벡터검색 (카테고리 지정 가능)
-- /api/logs          : 인메모리 로그 조회 (디버깅)
 
 응답 필드명은 UI(index.html)가 기대하는 형태로 매핑한다:
     ko_units / person_units / keywords / final_prompt(쉼표문자열) / suspicious_tags / english_prompt
@@ -13,7 +12,6 @@ API 모듈 (배포용)
 
 import json
 import logging
-from collections import deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -177,30 +175,9 @@ async def _wait_for_turn(my: int):
         await _asyncio.sleep(0.8)
 
 
-# ---------------------------------------------------------------------------
-# 인메모리 로그 캡처
-# ---------------------------------------------------------------------------
-_LOG_BUFFER: deque = deque(maxlen=500)
-_LOG_SEQ = {"n": 0}
-
-
-class BufferLogHandler(logging.Handler):
-    def emit(self, record):
-        try:
-            _LOG_SEQ["n"] += 1
-            _LOG_BUFFER.append({
-                "seq": _LOG_SEQ["n"],
-                "level": record.levelname,
-                "name": record.name.replace("core.", ""),
-                "msg": self.format(record),
-            })
-        except Exception:
-            pass
-
-
-_buf_handler = BufferLogHandler()
-_buf_handler.setFormatter(logging.Formatter("%(message)s"))
-logging.getLogger("core").addHandler(_buf_handler)
+# 콘솔 로그를 HTTP 로 돌려주던 /api/logs(인메모리 버퍼)는 2026-11-18 에 없앴다. 콘솔 로그에는 모든 사용자의
+# 입력·최종 태그·자연어가 찍히는데, 인증 없이 열려 있어서 주소만 알면 남의 생성 내용을 볼 수 있었다.
+# 로그는 서버에서 본다: 콘솔은 `docker compose logs`, 생성 기록은 logs/generations-*.jsonl(로그 뷰어). 다시 만들지 않는다.
 logging.getLogger("core").setLevel(logging.INFO)
 
 
@@ -575,12 +552,6 @@ async def direct_search(req: DirectSearchRequest):
     ]
     logger.info(f"   \u2514 {len(results)}건 반환")
     return {"query": req.query, "variant": req.variant, "results": results}
-
-
-@app.get("/api/logs")
-async def get_logs(after: int = 0):
-    items = [x for x in _LOG_BUFFER if x["seq"] > after]
-    return {"logs": items, "last": _LOG_SEQ["n"]}
 
 
 @app.get("/api/health")
